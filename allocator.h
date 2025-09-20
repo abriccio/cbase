@@ -6,27 +6,30 @@
 #include <string.h>
 #include <assert.h>
 
+#include "types.h"
+#include "log.h"
+
 #define DEFAULT_ALIGN (sizeof(void*))
 
 typedef struct {
-    void *(*alloc)(void *ctx, size_t size);
-    void *(*realloc)(void *ctx, void *ptr, size_t new_size);
+    void *(*alloc)(void *ctx, usize size);
+    void *(*realloc)(void *ctx, void *ptr, usize new_size);
     void (*free)(void *ctx);
 } Allocator;
 
-static bool is_power_of_two(size_t n) {
+static bool is_power_of_two(usize n) {
     return (n & (n - 1)) == 0;
 }
 
-static size_t next_power_of_two(size_t n) {
+static usize next_power_of_two(usize n) {
     if (is_power_of_two(n)) return n;
     return 1ul << (64 - __builtin_clzll(n));
 }
 
 static void *align_forward(void *ptr, int align) {
-    size_t p = (size_t)ptr;
+    usize p = (usize)ptr;
     assert(is_power_of_two(align));
-    size_t mod = p & (align - 1);
+    usize mod = p & (align - 1);
 
     if (mod != 0) {
         p += align - mod;
@@ -35,12 +38,12 @@ static void *align_forward(void *ptr, int align) {
     return (void*)p;
 }
 
-static void *heap_allocate(void *ctx, size_t size) {
+static void *heap_allocate(void *ctx, usize size) {
     (void)ctx;
     return malloc(size);
 }
 
-static void *heap_realloc(void *ctx, void *ptr, size_t size) {
+static void *heap_realloc(void *ctx, void *ptr, usize size) {
     (void)ctx;
     return realloc(ptr, size);
 }
@@ -64,16 +67,16 @@ static HeapAllocator heap_allocator_init() {
 
 typedef struct {
     Allocator allocator;
-    uint8_t *data;
-    size_t head;
-    size_t capacity;
+    u8 *data;
+    usize head;
+    usize capacity;
 } Arena;
 
-static void *arena_alloc(void *, size_t);
-static void *arena_realloc(void*, void *, size_t);
+static void *arena_alloc(void *, usize);
+static void *arena_realloc(void*, void *, usize);
 static void arena_free(void *);
 
-static Arena arena_init(size_t capacity) {
+static Arena arena_init(usize capacity) {
     Arena a = {0};
     a.allocator = (Allocator){
         .alloc = arena_alloc,
@@ -81,16 +84,25 @@ static Arena arena_init(size_t capacity) {
         .realloc = arena_realloc,
     };
     a.capacity = capacity;
-    a.data = (uint8_t*)malloc(capacity);
+    a.data = (u8*)malloc(capacity);
     return a;
 }
 
-static void *arena_alloc(void *ctx, size_t size) {
-    size_t align = DEFAULT_ALIGN;
+static bool arena_resize(Arena *a, usize new_capacity) {
+    a->data = (u8*)realloc(a->data, new_capacity);
+    if (!a->data) {
+        return false;
+    }
+    a->capacity = new_capacity;
+    return true;
+}
+
+static void *arena_alloc(void *ctx, usize size) {
+    usize align = DEFAULT_ALIGN;
     Arena *a = (Arena*)ctx;
     void *data = &a->data[a->head];
     void *aligned = align_forward(data, align);
-    size_t delta = ((size_t)aligned - (size_t)data);
+    usize delta = ((usize)aligned - (usize)data);
     if (a->head + size + delta < a->capacity) {
         a->head += delta + size;
         memset(aligned, 0, size);
@@ -98,12 +110,20 @@ static void *arena_alloc(void *ctx, size_t size) {
         return aligned;
     }
 
+    if (arena_resize(a, a->capacity * 2)) {
+        // is this fucked...?
+        return arena_alloc(ctx, size);
+    }
+
     return NULL;
 }
 
-// For now, simply returns a pointer to the arena's head. Don't reuse a pointer
-// passed into this function, always use the returned pointer.
-static void *arena_realloc(void *ctx, void *ptr, size_t size) {
+// For now, simply allocates new memory without checking if old memory can be
+// reused. Don't reuse a pointer passed into this function, always use the
+// returned pointer.
+// TODO check if this is the previous allocation and can therefore be reused
+static void *arena_realloc(void *ctx, void *ptr, usize size)
+{
     return arena_alloc(ctx, size);
 }
 
@@ -114,7 +134,9 @@ static void arena_reset(Arena *a) {
     a->head = 0;
 }
 
+
 static void arena_deinit(Arena *a) {
+    if (!a) return;
     free(a->data);
 }
 
