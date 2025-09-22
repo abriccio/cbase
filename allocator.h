@@ -134,6 +134,9 @@ static void arena_reset(Arena *a) {
     a->head = 0;
 }
 
+static void arena_set_head(Arena *a, usize head) {
+    a->head = head;
+}
 
 static void arena_deinit(Arena *a) {
     if (!a) return;

@@ -234,6 +234,36 @@ static int string_get_count_of(String str, char c) {
     return count;
 }
 
+static String string_split_until(String str, char delim) {
+    char *ptr = str.data;
+    char *end = str.data + str.len;
+    for (;ptr < end; ptr++) {
+        char c = *ptr;
+        if (c == delim) {
+            return (String){
+                .data = str.data,
+                .len = (int)(ptr - str.data),
+            };
+        }
+    }
+    return (String){0};
+}
+
+static String string_split_after(String str, char delim) {
+    char *ptr = str.data;
+    char *end = str.data + str.len;
+    for (;ptr < end; ptr++) {
+        char c = *ptr;
+        if (c == delim) {
+            return (String){
+                .data = ptr,
+                .len = (int)(end - ptr),
+            };
+        }
+    }
+    return (String){0};
+}
+
 static StringArray string_split_delim(Allocator *alloc, String str, char delim) {
     StringArray arr = {0};
     int delim_count = string_get_count_of(str, delim);
