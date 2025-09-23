@@ -63,7 +63,7 @@ static HeapAllocator heap_allocator_init() {
 }
 
 /* ARENA API */
-// TODO support growing arena
+// TODO support growing arena without invalidating existing data (linked list of backing allocations?)
 
 typedef struct {
     Allocator allocator;
@@ -80,14 +80,15 @@ static Arena arena_init(usize capacity) {
     Arena a = {0};
     a.allocator = (Allocator){
         .alloc = arena_alloc,
-        .free = arena_free,
         .realloc = arena_realloc,
+        .free = arena_free,
     };
     a.capacity = capacity;
     a.data = (u8*)malloc(capacity);
     return a;
 }
 
+// Will invalidate any existing pointers derived from this arena
 static bool arena_resize(Arena *a, usize new_capacity) {
     a->data = (u8*)realloc(a->data, new_capacity);
     if (!a->data) {
@@ -142,5 +143,44 @@ static void arena_deinit(Arena *a) {
     if (!a) return;
     free(a->data);
 }
+
+#define Array(T) struct {T *items; usize len; usize cap;}
+
+#define array_init_capacity(allocator, array, capacity) do { \
+    (array)->items = (typeof((array)->items))(allocator)->alloc((allocator), capacity * sizeof(*(array)->items)); \
+    (array)->cap = capacity; \
+    (array)->len = 0; \
+} while(0)
+
+#define array_reserve(alloc, array, capacity) do { \
+    if ((capacity) > (array)->cap) { \
+        (array)->items = (typeof((array)->items))(alloc)->realloc(alloc, (array)->items, (capacity) * sizeof(*(array)->items));\
+        (array)->cap = (capacity); \
+    }\
+} while (0)
+
+#define array_append(alloc, array, item) do {\
+    if ((array)->len + 1 > (array)->cap) { \
+        array_reserve(alloc, array, (array)->cap * 2); \
+    } \
+    (array)->items[(array)->len++] = (item);\
+} while (0)
+
+#define array_append_many(alloc, array, item_ptr, count) do { \
+    if ((array)->len + count > (array)->cap) { \
+        array_reserve(alloc, array, (array)->cap * 2); \
+    } \
+    memcpy((array)->items + (array)->len, item_ptr, count * sizeof(*item_ptr)); \
+    (array)->len += count; \
+} while(0)
+
+#define array_resize(alloc, array, size) do {\
+    array_reserve(alloc, array, size);\
+    (array)->len = size;\
+} while (0)
+
+#define array_last(array) &((array)->items[(array)->len - 1])
+
+#define each_item(T, i, array) (T *i = (array)->items; i < (array)->items + (array)->len; ++i)
 
 #endif
