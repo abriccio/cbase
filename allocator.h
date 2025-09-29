@@ -104,7 +104,7 @@ static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
 
 static bool _arena_has_capacity_for_size(Arena *a, usize size) {
     ArenaAllocation *head_alloc = a->last;
-    if (head_alloc->head + size < head_alloc->capacity) {
+    if (head_alloc->head + size <= head_alloc->capacity) {
         return true;
     }
 
@@ -140,7 +140,7 @@ static void *arena_alloc(void *ctx, usize size) {
     void *data = &head_alloc->data[head_alloc->head];
     void *aligned = align_forward(data, align);
     usize delta = ((usize)aligned - (usize)data);
-    if (head_alloc->head + size + delta < head_alloc->capacity) {
+    if (head_alloc->head + size + delta <= head_alloc->capacity) {
         head_alloc->head += delta + size;
         memset(aligned, 0, size);
 
