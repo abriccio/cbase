@@ -26,16 +26,15 @@ static usize next_power_of_two(usize n) {
     return 1ul << (64 - __builtin_clzll(n));
 }
 
-static void *align_forward(void *ptr, int align) {
-    usize p = (usize)ptr;
+static void *align_forward(usize ptr, int align) {
     assert(is_power_of_two(align));
-    usize mod = p & (align - 1);
+    usize mod = ptr & (align - 1);
 
     if (mod != 0) {
-        p += align - mod;
+        ptr += align - mod;
     }
 
-    return (void*)p;
+    return (void*)ptr;
 }
 
 static void *heap_allocate(void *ctx, usize size) {
@@ -102,14 +101,25 @@ static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
     return new;
 }
 
-static bool _arena_has_capacity_for_size(Arena *a, usize size) {
-    ArenaAllocation *head_alloc = a->last;
-    if (head_alloc->head + size <= head_alloc->capacity) {
+static bool _arena_allocation_has_capacity_for_size(ArenaAllocation *a, usize size, usize align) {
+    void *aligned = align_forward((usize)a->data + a->head, align);
+    usize delta = (usize)aligned - (usize)a->data;
+    if (size + delta <= a->capacity) {
         return true;
     }
 
     return false;
 }
+
+static ArenaAllocation *_arena_allocation_for_size(Arena *a, usize size) {
+    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
+        if (_arena_allocation_has_capacity_for_size(node, size, DEFAULT_ALIGN))
+            return node;
+    }
+
+    return _arena_new_allocation(a, size);
+}
+
 
 static Arena arena_init(usize capacity) {
     Arena a = {0};
@@ -118,27 +128,26 @@ static Arena arena_init(usize capacity) {
         .realloc = arena_realloc,
         .free = arena_free,
     };
-    a.first = _arena_new_allocation(&a, capacity);
+    _arena_new_allocation(&a, capacity);
     return a;
 }
 
 static void arena_ensure_capacity(Arena *a, usize capacity) {
-    if (!_arena_has_capacity_for_size(a, capacity)) {
-        _arena_new_allocation(a, capacity);
+    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
+        if (_arena_allocation_has_capacity_for_size(node, capacity, DEFAULT_ALIGN)) {
+            return;
+        }
     }
+
+    _arena_new_allocation(a, capacity);
 }
 
 static void *arena_alloc(void *ctx, usize size) {
     usize align = DEFAULT_ALIGN;
     Arena *a = (Arena*)ctx;
-    ArenaAllocation *head_alloc;
-    if (_arena_has_capacity_for_size(a, size)) {
-        head_alloc = a->last;
-    } else {
-        head_alloc = _arena_new_allocation(a, next_power_of_two(size));
-    }
+    ArenaAllocation *head_alloc = _arena_allocation_for_size(a, size);
     void *data = &head_alloc->data[head_alloc->head];
-    void *aligned = align_forward(data, align);
+    void *aligned = align_forward((usize)data, align);
     usize delta = ((usize)aligned - (usize)data);
     if (head_alloc->head + size + delta <= head_alloc->capacity) {
         head_alloc->head += delta + size;
@@ -147,6 +156,7 @@ static void *arena_alloc(void *ctx, usize size) {
         return aligned;
     }
 
+    err("Arena out of memory\n");
     return NULL;
 }
 
