@@ -4,6 +4,8 @@
 #include "allocator.h"
 #include "log.h"
 #include "types.h"
+#define STB_SPRINTF_IMPLEMENTATION
+#include "stb_sprintf.h"
 #include <stdio.h>
 #include <wchar.h>
 
@@ -32,7 +34,7 @@ typedef struct {
     int cap;
 } StringArray;
 
-static void string_print(String str);
+static void string_println(String str);
 
 // Find the length of a null-terminated C-string
 static int string_len(const char *cstr) {
@@ -292,11 +294,30 @@ static StringArray string_split_delim(Allocator *alloc, String str, char delim) 
     return arr;
 }
 
-static void string_print(String str) {
+static void string_println(String str) {
     for (int i = 0; i < str.len; ++i) {
         putc(str.data[i], stdout);
     }
     putc('\n', stdout);
+}
+
+static String string_printfv(Allocator *alloc, const char *fmt, va_list args) {
+    char *buf = (char *)alloc->alloc(alloc, string_len(fmt) * 2);
+    int len = stbsp_vsprintf(buf, fmt, args);
+
+    return (String){
+        .data = buf,
+        .len = len,
+    };
+}
+
+static String string_printf(Allocator *alloc, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    String result = string_printfv(alloc, fmt, args);
+    va_end(args);
+
+    return result;
 }
 
 #endif

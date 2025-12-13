@@ -14,7 +14,7 @@
 typedef struct {
     void *(*alloc)(void *ctx, usize size);
     void *(*realloc)(void *ctx, void *ptr, usize new_size);
-    void (*free)(void *ctx);
+    void (*free)(void *ctx, void *ptr);
 } Allocator;
 
 static bool is_power_of_two(usize n) {
@@ -79,7 +79,7 @@ typedef struct {
 
 static void *arena_alloc(void *, usize);
 static void *arena_realloc(void*, void *, usize);
-static void arena_free(void *);
+static void arena_free(void *, void *);
 
 static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
     ArenaAllocation *new = (ArenaAllocation*)malloc(sizeof(ArenaAllocation));
@@ -142,6 +142,15 @@ static void arena_ensure_capacity(Arena *a, usize capacity) {
     _arena_new_allocation(a, capacity);
 }
 
+static usize arena_query_capacity(Arena *a) {
+    usize sum = 0;
+    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
+        sum += node->head;
+    }
+
+    return sum;
+}
+
 static void *arena_alloc(void *ctx, usize size) {
     usize align = DEFAULT_ALIGN;
     Arena *a = (Arena*)ctx;
@@ -169,7 +178,7 @@ static void *arena_realloc(void *ctx, void *ptr, usize size)
     return arena_alloc(ctx, size);
 }
 
-static void arena_free(void *ctx) {}
+static void arena_free(void *ctx, void *ptr) {}
 
 // Resets the head to zero, allowing for re-use of arena without reallocating
 static void arena_reset(Arena *a) {
@@ -224,7 +233,10 @@ static void arena_deinit(Arena *a) {
     (array)->len = size;\
 } while (0)
 
-#define array_last(array) &((array)->items[(array)->len - 1])
+#define array_last(array) ((array)->items[(array)->len - 1])
+#define array_last_ptr(array) &((array)->items[(array)->len - 1])
+
+#define array_pop(array) ((array)->len--, (array)->items[(array)->len])
 
 #define each_item(T, i, array) (T *i = (array)->items; i < (array)->items + (array)->len; ++i)
 
