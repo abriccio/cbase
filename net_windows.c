@@ -75,7 +75,7 @@ NetResult net_request_send(HttpRequest *req) {
 
 #if NET_TEST
 int main(int argc, char *argv[]) {
-    HttpClient client = net_client_init("NET_CLIENT_TEST", "arborealaudio.com", Sync);
+    HttpClient client = net_client_init("NET_CLIENT_TEST", "arborealaudio.com", HttpConnectionSync);
     if (net_client_connect(&client) != NetSuccess) {
         printf("Connection failed\n");
         return print_win32_error_and_fail();
