@@ -45,7 +45,10 @@ static int string_len(const char *cstr) {
     return len;
 }
 
+#define STR_LIT(str) (String){.data = str, .len = sizeof(str)/sizeof(*str)}
+
 // For now, retains null-termination
+// ISSUE: Why do we retain null-termination?
 static String string(char *cstr) {
     int len = string_len(cstr);
     return (String){

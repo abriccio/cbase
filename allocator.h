@@ -1,6 +1,5 @@
 #ifndef ALLOCATOR_H
 #define ALLOCATOR_H
-/* ALLOCATOR INTERFACE */
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -9,7 +8,12 @@
 #include "types.h"
 #include "log.h"
 
+/* ALLOCATOR INTERFACE */
+
 #define DEFAULT_ALIGN (sizeof(void*))
+#define KB(x) ((u64)x << 10ul)
+#define MB(x) ((u64)x << 20ul)
+#define GB(x) ((u64)x << 30ul)
 
 typedef struct {
     void *(*alloc)(void *ctx, usize size);
@@ -37,6 +41,10 @@ static void *align_forward(usize ptr, int align) {
     return (void*)ptr;
 }
 
+static usize page_size();
+
+/* LIBC Allocator API */
+
 static void *heap_allocate(void *ctx, usize size) {
     (void)ctx;
     return malloc(size);
@@ -47,16 +55,21 @@ static void *heap_realloc(void *ctx, void *ptr, usize size) {
     return realloc(ptr, size);
 }
 
+static void heap_free(void *ctx, void *ptr) {
+    (void)ctx;
+    free(ptr);
+}
+
 typedef struct {
     Allocator allocator;
-} HeapAllocator;
+} LibCAllocator;
 
-static HeapAllocator heap_allocator_init() {
-    return (HeapAllocator){
+static LibCAllocator heap_allocator_init() {
+    return (LibCAllocator){
         .allocator = {
             .alloc = heap_allocate,
             .realloc = heap_realloc,
-            .free = NULL,
+            .free = heap_free,
         },
     };
 }
@@ -71,132 +84,42 @@ typedef struct ArenaAllocation {
     usize capacity;
 } ArenaAllocation;
 
+// Growable arena allocator which uses malloc as its backing allocator
 typedef struct {
     Allocator allocator;
     ArenaAllocation *first;
     ArenaAllocation *last;
 } Arena;
 
-static void *arena_alloc(void *, usize);
-static void *arena_realloc(void*, void *, usize);
-static void arena_free(void *, void *);
+Arena arena_init(usize capacity);
+void arena_deinit(Arena *a);
+void arena_ensure_capacity(Arena *a, usize capacity);
+usize arena_query_capacity(Arena *a);
+void arena_reset(Arena *a);
+void arena_set_head(Arena *a, usize head);
+void *arena_alloc(void *arena, usize);
+void *arena_realloc(void *arena, void *, usize);
+void arena_free(void *arena, void *);
 
-static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
-    ArenaAllocation *new = (ArenaAllocation*)malloc(sizeof(ArenaAllocation));
-    if (!a->first) {
-        a->first = new;
-    } else {
-        a->last->next = new;
-    }
-    memset(new, 0, sizeof(*new));
-    new->data = (u8*)malloc(capacity);
-    if (!new->data) {
-        err("Failed to allocate new data\n");
-        return NULL;
-    }
-    new->capacity = capacity;
-    memset(new->data, 0, capacity);
-    a->last = new;
+/*
+    TEMP ARENA API
+    Fixed-size Arena for small allocations, scratch space, per-frame allocations, etc.
+    No procedures for freeing or reallocating, only resetting the allocation head.
+ */
 
-    return new;
-}
+typedef struct {
+    Allocator allocator;
+    u8 *data;
+    usize head;
+    usize capacity;
+} TempArena;
 
-static bool _arena_allocation_has_capacity_for_size(ArenaAllocation *a, usize size, usize align) {
-    void *aligned = align_forward((usize)a->data + a->head, align);
-    usize delta = (usize)aligned - (usize)a->data;
-    if (size + delta <= a->capacity) {
-        return true;
-    }
+TempArena temp_arena_init(usize capacity);
+void temp_arena_deinit(TempArena *ta);
+void *temp_arena_alloc(void *arena, usize size);
+void temp_arena_reset(TempArena *ta);
 
-    return false;
-}
-
-static ArenaAllocation *_arena_allocation_for_size(Arena *a, usize size) {
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        if (_arena_allocation_has_capacity_for_size(node, size, DEFAULT_ALIGN))
-            return node;
-    }
-
-    return _arena_new_allocation(a, size);
-}
-
-
-static Arena arena_init(usize capacity) {
-    Arena a = {0};
-    a.allocator = (Allocator){
-        .alloc = arena_alloc,
-        .realloc = arena_realloc,
-        .free = arena_free,
-    };
-    _arena_new_allocation(&a, capacity);
-    return a;
-}
-
-static void arena_ensure_capacity(Arena *a, usize capacity) {
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        if (_arena_allocation_has_capacity_for_size(node, capacity, DEFAULT_ALIGN)) {
-            return;
-        }
-    }
-
-    _arena_new_allocation(a, capacity);
-}
-
-static usize arena_query_capacity(Arena *a) {
-    usize sum = 0;
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        sum += node->head;
-    }
-
-    return sum;
-}
-
-static void *arena_alloc(void *ctx, usize size) {
-    usize align = DEFAULT_ALIGN;
-    Arena *a = (Arena*)ctx;
-    ArenaAllocation *head_alloc = _arena_allocation_for_size(a, size);
-    void *data = &head_alloc->data[head_alloc->head];
-    void *aligned = align_forward((usize)data, align);
-    usize delta = ((usize)aligned - (usize)data);
-    if (head_alloc->head + size + delta <= head_alloc->capacity) {
-        head_alloc->head += delta + size;
-        memset(aligned, 0, size);
-
-        return aligned;
-    }
-
-    err("Arena out of memory\n");
-    return NULL;
-}
-
-// For now, simply allocates new memory without checking if old memory can be
-// reused. Don't reuse a pointer passed into this function, always use the
-// returned pointer.
-// TODO check if this is the previous allocation and can therefore be reused
-static void *arena_realloc(void *ctx, void *ptr, usize size)
-{
-    return arena_alloc(ctx, size);
-}
-
-static void arena_free(void *ctx, void *ptr) {}
-
-// Resets the head to zero, allowing for re-use of arena without reallocating
-static void arena_reset(Arena *a) {
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        node->head = 0;
-    }
-}
-
-static void arena_set_head(Arena *a, usize head) {
-    a->last->head = head;
-}
-
-static void arena_deinit(Arena *a) {
-    if (!a) return;
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        free(node->data);
-    }
-}
+/* Generic Array API */
 
 #define Array(T) struct {T *items; usize len; usize cap;}
 
@@ -213,6 +136,7 @@ static void arena_deinit(Arena *a) {
     }\
 } while (0)
 
+// May invalidate pointers if over capacity
 #define array_append(alloc, array, item) do {\
     if ((array)->len + 1 > (array)->cap) { \
         array_reserve(alloc, array, (array)->cap * 2); \
@@ -220,6 +144,7 @@ static void arena_deinit(Arena *a) {
     (array)->items[(array)->len++] = (item);\
 } while (0)
 
+// May invalidate pointers if over capacity
 #define array_append_many(alloc, array, item_ptr, count) do { \
     if ((array)->len + count > (array)->cap) { \
         array_reserve(alloc, array, (array)->cap * 2); \
@@ -228,6 +153,7 @@ static void arena_deinit(Arena *a) {
     (array)->len += count; \
 } while(0)
 
+// Will invalidate pointers
 #define array_resize(alloc, array, size) do {\
     array_reserve(alloc, array, size);\
     (array)->len = size;\
@@ -238,6 +164,6 @@ static void arena_deinit(Arena *a) {
 
 #define array_pop(array) ((array)->len--, (array)->items[(array)->len])
 
-#define each_item(T, i, array) (T *i = (array)->items; i < (array)->items + (array)->len; ++i)
+#define each(T, i, array) (T *i = (array)->items; i < (array)->items + (array)->len; ++i)
 
 #endif
