@@ -10,7 +10,7 @@
 #define println(fmt, args...) printf("%s: (%s:%d): " fmt "\n", APP_NAME, __func__, __LINE__, ## args, NULL)
 
 #ifndef NDEBUG
-#define dbg(fmt, args...) print(fmt, ##args)
+#define dbg(fmt, args...) println(fmt, ##args)
 #else
 #define dbg
 #endif

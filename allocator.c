@@ -140,6 +140,7 @@ TempArena temp_arena_init(usize capacity) {
     };
 }
 
+
 void temp_arena_deinit(TempArena *ta) {
     free(ta->data);
 }

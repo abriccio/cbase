@@ -2,8 +2,7 @@
 #define FS_H
 
 // APIs for using the filesystem
-
-#include "log.h"
+#include "types.h"
 #include "strings.h"
 
 #include <stdio.h>
@@ -67,6 +66,26 @@ static u8 *file_read_full_alloc(File f, Allocator *alloc) {
         return NULL;
     }
     return buf;
+}
+
+static void file_write(File f, u8 *bytes, usize size) {
+    for (int i = 0; i < size; ++i) {
+        fputc(bytes[i], f.fd);
+        // fwrite(bytes, 1, size, f.fd);
+    }
+}
+
+static void file_write_string(File f, String str) {
+    file_write(f, (u8*)str.data, str.len);
+}
+
+static void file_printf(File f, Allocator *alloc, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    String printed = string_printfv(alloc, fmt, args);
+    va_end(args);
+
+    file_write_string(f, printed);
 }
 
 static void file_close(File f) {

@@ -24,6 +24,11 @@ typedef struct {
 } String;
 
 typedef struct {
+    const char *data;
+    int len;
+} ConstString;
+
+typedef struct {
     uint16_t *data;
     int len;
 } String16;
@@ -34,24 +39,32 @@ typedef struct {
     int cap;
 } StringArray;
 
+static void string_print(String str);
 static void string_println(String str);
 
 // Find the length of a null-terminated C-string
 static int string_len(const char *cstr) {
     int len = 0;
-    while(*(cstr++)) {
+    while(*cstr) {
         len++;
+        cstr++;
     }
     return len;
 }
 
-#define STR_LIT(str) (String){.data = str, .len = sizeof(str)/sizeof(*str)}
+#define STR_LIT(str) (String){.data = (str), .len = sizeof((str))-1}
 
-// For now, retains null-termination
-// ISSUE: Why do we retain null-termination?
 static String string(char *cstr) {
     int len = string_len(cstr);
     return (String){
+        .data = cstr,
+        .len = len,
+    };
+}
+
+static ConstString const_string(const char *cstr) {
+    int len = string_len(cstr);
+    return (ConstString){
         .data = cstr,
         .len = len,
     };
@@ -76,7 +89,7 @@ static Utf16BOM string16_bom(const uint16_t first_char) {
 
 static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, uint8_t *utf16, size_t utf16_size) {
     String str = {.len = 0};
-    char *ptr = str.data = alloc->alloc(alloc, utf16_size / 2 + 1);
+    char *ptr = str.data = (char*)alloc->alloc(alloc, utf16_size / 2 + 1);
 
     switch (byte_order) {
     case Utf16None:
@@ -99,6 +112,18 @@ static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, uint8_t *
 }
 
 static bool string_match(String a, String b) {
+    if (a.len != b.len) return false;
+    if (a.data == b.data) return true;
+    for (int i = 0; i < a.len; ++i) {
+        if (a.data[i] != b.data[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool const_string_match(ConstString a, ConstString b) {
     if (a.len != b.len) return false;
     if (a.data == b.data) return true;
     for (int i = 0; i < a.len; ++i) {
@@ -132,7 +157,7 @@ static bool string_match_no_case(String a, String b) {
 
 static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int count) {
     StringArray sa = {0};
-    String *buf = alloc->alloc(alloc, sizeof(String) * count);
+    String *buf = (String*)alloc->alloc(alloc, sizeof(String) * count);
     if (!buf) {
         err("String alloc failed\n");
         return sa;
@@ -150,7 +175,7 @@ static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int 
 // Allocates a string array from an array of strings
 static StringArray string_array_from_array(Allocator *alloc, String strings[], int count) {
     StringArray sa = {0};
-    sa.strings = alloc->alloc(alloc, sizeof(String) * count);
+    sa.strings = (String*)alloc->alloc(alloc, sizeof(String) * count);
     if (!sa.strings) {
         err("String alloc failed\n");
         return sa;
@@ -168,7 +193,7 @@ static StringArray string_array_from_array(Allocator *alloc, String strings[], i
 static void string_array_append(Allocator *alloc, StringArray *sa, String str) {
     if (sa->count + 1 > sa->cap) {
         sa->cap *= 2;
-        sa->strings = alloc->realloc(alloc, sa->strings, sa->cap * sizeof(String));
+        sa->strings = (String*)alloc->realloc(alloc, sa->strings, sa->cap * sizeof(String));
     }
 
     sa->strings[sa->count++] = str;
@@ -180,7 +205,7 @@ static String string_concat(Allocator *alloc, String *strings, int count) {
         size += strings[i].len;
     }
 
-    char *out_data = alloc->alloc(alloc, size + 1);
+    char *out_data = (char*)alloc->alloc(alloc, size + 1);
     if (!out_data) {
         err("Allocation failed\n");
         return (String){0};
@@ -209,7 +234,7 @@ static String path_join(Allocator *alloc, String *paths, int count) {
     }
     String str = {0};
     str.len = sep_count + size;
-    char *ptr = str.data = alloc->alloc(alloc, str.len + 1);
+    char *ptr = str.data = (char*)alloc->alloc(alloc, str.len + 1);
     if (!str.data) {
         err("Allocation failed\n");
         return str;
@@ -297,21 +322,42 @@ static StringArray string_split_delim(Allocator *alloc, String str, char delim) 
     return arr;
 }
 
-static void string_println(String str) {
+static void string_print(String str) {
     for (int i = 0; i < str.len; ++i) {
         putc(str.data[i], stdout);
     }
+}
+
+static void string_println(String str) {
+    string_print(str);
     putc('\n', stdout);
 }
 
-static String string_printfv(Allocator *alloc, const char *fmt, va_list args) {
-    char *buf = (char *)alloc->alloc(alloc, string_len(fmt) * 2);
+static String string_print_buf(char *buf, usize size, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int len = stbsp_vsprintf(buf, fmt, args);
+    va_end(args);
+
+    return (String){
+        .data = buf,
+        .len = len,
+    };
+}
+
+static String string_print_bufv(char *buf, usize size, const char *fmt, va_list args) {
     int len = stbsp_vsprintf(buf, fmt, args);
 
     return (String){
         .data = buf,
         .len = len,
     };
+}
+
+static String string_printfv(Allocator *alloc, const char *fmt, va_list args) {
+    uint buf_size = string_len(fmt) * 2;
+    char *buf = (char *)alloc->alloc(alloc, buf_size);
+    return string_print_bufv(buf, buf_size, fmt, args);
 }
 
 static String string_printf(Allocator *alloc, const char *fmt, ...) {
