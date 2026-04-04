@@ -29,7 +29,7 @@ typedef struct {
 } ConstString;
 
 typedef struct {
-    uint16_t *data;
+    u16 *data;
     int len;
 } String16;
 
@@ -78,7 +78,7 @@ static String string_from_bytes(u8 *bytes, int len) {
 }
 
 // returns endianness of string, or -1 for no given byte order
-static Utf16BOM string16_bom(const uint16_t first_char) {
+static Utf16BOM string16_bom(const u16 first_char) {
     if (first_char == 0xfffe)
         return Utf16Le;
     if (first_char == 0xfeff)
@@ -87,7 +87,7 @@ static Utf16BOM string16_bom(const uint16_t first_char) {
     return Utf16None;
 }
 
-static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, uint8_t *utf16, size_t utf16_size) {
+static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, u8 *utf16, size_t utf16_size) {
     String str = {.len = 0};
     char *ptr = str.data = (char*)alloc->alloc(alloc, utf16_size / 2 + 1);
 
@@ -109,6 +109,56 @@ static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, uint8_t *
     }
 
     return str;
+}
+
+static String16 string16_from_string(Allocator *alloc, String str) {
+    String16 str16 = {.len = str.len};
+
+    u16 *ptr = str16.data = (u16*)alloc->alloc(alloc, str.len * sizeof(u16));
+
+    for (int i = 0; i < str.len; ++i) {
+        ptr[i] = (u16)str.data[i];
+    }
+
+    return str16;
+}
+
+static String16 string16_from_utf8(Allocator *alloc, const char *str) {
+    int len = string_len(str);
+    String16 str16 = {.len = len};
+
+    u16 *ptr = str16.data = (u16*)alloc->alloc(alloc, len * sizeof(u16));
+
+    for (int i = 0; i < len; ++i) {
+        ptr[i] = (u16)str[i];
+    }
+
+    return str16;
+}
+
+static u16 *utf16_from_string(Allocator *alloc, String str) {
+    u16 *buf = (u16*)alloc->alloc(alloc, str.len * sizeof(u16) + 1);
+
+    for (int i = 0; i < str.len; ++i) {
+        buf[i] = (u16)str.data[i];
+    }
+
+    buf[str.len] = 0;
+
+    return buf;
+}
+
+static u16 *utf16_from_utf8(Allocator *alloc, const char *str) {
+    int len = string_len(str);
+    u16 *buf = (u16*)alloc->alloc(alloc, (len + 1) * sizeof(u16));
+
+    for (int i = 0; i < len; ++i) {
+        buf[i] = (u16)str[i];
+    }
+
+    buf[len] = 0;
+
+    return buf;
 }
 
 static bool string_match(String a, String b) {
