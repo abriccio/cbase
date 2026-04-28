@@ -2,11 +2,14 @@
 #define FS_H
 
 // APIs for using the filesystem
+#include "allocator.h"
 #include "types.h"
 #include "strings.h"
 
 #include <stdio.h>
 #include <dirent.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/stat.h>
 
 typedef u32 FileType;
@@ -32,17 +35,21 @@ static File file_open(const char *path, FileOpenFlag flags) {
     char *mode;
     if (flags & FileOpen_ReadOnly)
         mode = "r";
-    else 
-        mode = "w+";
-    
+    else
+        mode = "w";
+
     // TODO handle append write
 
     FILE *fd = fopen(path, mode);
+    if (!fd) {
+        err("Failed to open %s: %s\n", path, strerror(errno));
+        return (File){0};
+    }
     usize len = 0;
     fseek(fd, 0, SEEK_END);
     len = (usize)ftell(fd);
     fseek(fd, 0, SEEK_SET);
-    
+
     return (File){.fd = fd, .size = len};
 }
 
@@ -69,10 +76,7 @@ static u8 *file_read_full_alloc(File f, Allocator *alloc) {
 }
 
 static void file_write(File f, u8 *bytes, usize size) {
-    for (int i = 0; i < size; ++i) {
-        fputc(bytes[i], f.fd);
-        // fwrite(bytes, 1, size, f.fd);
-    }
+    fwrite(bytes, 1, size, f.fd);
 }
 
 static void file_write_string(File f, String str) {
@@ -92,6 +96,38 @@ static void file_close(File f) {
     fclose(f.fd);
 }
 
+static void file_copy(Allocator *alloc, File src, File dst) {
+    u8 *src_data = file_read_full_alloc(src, alloc);
+    file_write(dst, src_data, src.size);
+}
+
+static bool file_rename(const char *name, const char *old) {
+    bool result = true;
+    if (rename(old, name) != 0) {
+        err("Failed to rename %s to %s: %s\n", old, name, strerror(errno));
+        result = false;
+    }
+
+    return result;
+}
+
+static bool file_delete(const char *path) {
+    if (remove(path) != 0) {
+        err("Failed to remove file %s: %s\n", path, strerror(errno));
+        return false;
+    }
+    return true;
+}
+
+static usize file_mtime(const char *path) {
+    struct stat s;
+    if (stat(path, &s) != 0) {
+        err("%s\n", strerror(errno));
+        return 0;
+    }
+    return s.st_mtime;
+}
+
 typedef struct DirIterator {
     struct dirent *file_info;
     FileType type;
@@ -100,6 +136,53 @@ typedef struct DirIterator {
 
 static String file_ext(char *path) {
     return string_split_after(string(path), '.');
+}
+
+static bool dir_exists(String path) {
+    STACK_ALLOC_BEGIN(512);
+    char *cstr = (char*)STACK_ALLOC->alloc(STACK_ALLOC, path.len + 1);
+    memcpy(cstr, path.data, path.len);
+    struct stat s;
+    int result = stat(cstr, &s);
+    return result == 0;
+}
+
+static bool _make_dir_internal(String path) {
+    STACK_ALLOC_BEGIN(512);
+    char *cstr = (char*)STACK_ALLOC->alloc(STACK_ALLOC, path.len + 1);
+    memcpy(cstr, path.data, path.len);
+    int error = mkdir(cstr, 0775);
+    if (error != 0) {
+        if (errno == EEXIST) {
+            println("Dir exists: %s", cstr);
+            return true;
+        }
+        err("Failed to make dir: %s: %d %s\n", cstr, errno, strerror(errno));
+        return false;
+    }
+
+    dbg("Created dir: %s", cstr);
+    return true;
+}
+
+static bool _make_dir_recursive(String path) {
+    char *ptr = path.data;
+    for (int i = 0; i < path.len; ++i) {
+        if (ptr[i] == '/' && i != 0) {
+            String dir = {.data = ptr, .len = i};
+            if (!_make_dir_internal(dir))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+static bool make_dir(String path) {
+    if (dir_exists(path)) {
+        return false;
+    }
+    return _make_dir_recursive(path);
 }
 
 static DirIterator dir_iter_next(DIR *dir) {

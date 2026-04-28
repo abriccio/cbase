@@ -161,6 +161,20 @@ static u16 *utf16_from_utf8(Allocator *alloc, const char *str) {
     return buf;
 }
 
+static String string_clone(Allocator *alloc, String str) {
+    String out = {.len = str.len};
+    out.data = (char*)alloc->alloc(alloc, str.len);
+    memcpy(out.data, str.data, str.len);
+    return out;
+}
+
+static char *string_to_cstring(Allocator *alloc, String str) {
+    char *out = (char*)alloc->alloc(alloc, str.len + 1);
+    memcpy(out, str.data, str.len);
+    out[str.len] = 0;
+    return out;
+}
+
 static bool string_match(String a, String b) {
     if (a.len != b.len) return false;
     if (a.data == b.data) return true;
@@ -193,7 +207,7 @@ static bool string_match_no_case(String a, String b) {
     for (int i = 0; i < a.len; ++i) {
         int d = a.data[i] - b.data[i];
         if (d != 0) {
-            if (abs(d) != 32) {
+            if (abs(d) != case_diff) {
                 diff += d;
             }
         }
@@ -205,16 +219,16 @@ static bool string_match_no_case(String a, String b) {
         return false;
 }
 
-static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int count) {
+static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int count, int capacity) {
     StringArray sa = {0};
-    String *buf = (String*)alloc->alloc(alloc, sizeof(String) * count);
+    String *buf = (String*)alloc->alloc(alloc, sizeof(String) * capacity);
     if (!buf) {
         err("String alloc failed\n");
         return sa;
     }
     sa.strings = buf;
     sa.count = count;
-    sa.cap = count;
+    sa.cap = capacity;
     for (int i = 0; i < count; ++i) {
         sa.strings[i] = string(cstrs[i]);
     }
@@ -223,9 +237,9 @@ static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int 
 }
 
 // Allocates a string array from an array of strings
-static StringArray string_array_from_array(Allocator *alloc, String strings[], int count) {
+static StringArray string_array_from_array(Allocator *alloc, String strings[], int count, int capacity) {
     StringArray sa = {0};
-    sa.strings = (String*)alloc->alloc(alloc, sizeof(String) * count);
+    sa.strings = (String*)alloc->alloc(alloc, sizeof(String) * capacity);
     if (!sa.strings) {
         err("String alloc failed\n");
         return sa;
@@ -235,7 +249,7 @@ static StringArray string_array_from_array(Allocator *alloc, String strings[], i
     }
 
     sa.count = count;
-    sa.cap = count;
+    sa.cap = capacity;
 
     return sa;
 }
@@ -247,6 +261,30 @@ static void string_array_append(Allocator *alloc, StringArray *sa, String str) {
     }
 
     sa->strings[sa->count++] = str;
+}
+
+// Generate a single string from a StringArray, inserting spaces between each item
+static String string_array_flatten(Allocator *alloc, const StringArray *sa) {
+    int sum = 0;
+    for (int i = 0; i < sa->count; ++i) {
+        sum += sa->strings[i].len;
+        if (i + 1 < sa->count)
+            sum += 1; // add room for a space
+    }
+
+    String str = {.len = sum};
+    char *ptr = str.data = (char*)alloc->alloc(alloc, sum + 1);
+
+    for (int i = 0; i < sa->count; ++i) {
+        memcpy(ptr, sa->strings[i].data, sa->strings[i].len);
+        ptr += sa->strings[i].len;
+        *ptr = ' ';
+        ptr += 1;
+    }
+
+    ptr[sum] = 0;
+
+    return str;
 }
 
 static String string_concat(Allocator *alloc, String *strings, int count) {
@@ -316,13 +354,12 @@ static int string_get_count_of(String str, char c) {
 
 static String string_split_until(String str, char delim) {
     char *ptr = str.data;
-    char *end = str.data + str.len;
-    for (;ptr < end; ptr++) {
-        char c = *ptr;
+    for (int i = 0; i < str.len; ++i) {
+        char c = ptr[i];
         if (c == delim) {
             return (String){
                 .data = str.data,
-                .len = (int)(ptr - str.data),
+                .len = i + 1,
             };
         }
     }
@@ -344,6 +381,7 @@ static String string_split_after(String str, char delim) {
     return (String){0};
 }
 
+// Allocates new strings in a string array, duplicated the results of the split
 static StringArray string_split_delim(Allocator *alloc, String str, char delim) {
     StringArray arr = {0};
     int delim_count = string_get_count_of(str, delim);
@@ -370,6 +408,42 @@ static StringArray string_split_delim(Allocator *alloc, String str, char delim) 
     }
 
     return arr;
+}
+
+// Returns a string split after last instance of delim in string. Truncates input string to split point
+static String string_pop_delim(String *str, char delim) {
+    String res = {0};
+    char *end = str->data + str->len - 1;
+    while (end != str->data) {
+        if (*end == delim) {
+            ++end;
+            break;
+        }
+        end--;
+    }
+    int new_len = end - str->data;
+    if (new_len == 0) {
+        str->len = 1;
+        res.data = end + 1;
+        res.len = str->len - new_len;
+    } else {
+        res.data = end;
+        res.len = str->len - new_len;
+        str->len = new_len;
+    }
+
+    return res;
+}
+
+// Splits off last portion of the path and returns it, truncating `path` up to the last split
+// TODO Write a `parent_dir` function or something that does what we usually use this for
+static String path_split(String *path) {
+    // Clip trailing / if there is one
+    if (path->data[path->len - 1] == '/')
+        path->len -= 1;
+    String file = string_pop_delim(path, '/');
+
+    return file;
 }
 
 static void string_print(String str) {
