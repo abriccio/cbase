@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "types.h"
 #include "log.h"
@@ -40,7 +41,9 @@ static void *align_forward(usize ptr, int align) {
     return (void*)ptr;
 }
 
-static usize page_size();
+static usize page_size() {
+    return (usize)getpagesize();
+}
 
 /* LIBC Allocator API */
 
@@ -118,9 +121,31 @@ void temp_arena_deinit(TempArena *ta);
 void *temp_arena_alloc(void *arena, usize size);
 void temp_arena_reset(TempArena *ta);
 
+/*
+ * STACK ALLOCATOR API
+ * Stack-based allocator with no need for freeing. Realloc operation is the same as allocating.
+ * Can reset the allocator head with the reset procedure.
+ */
+
+typedef struct {
+    Allocator allocator;
+    u8 *data;
+    usize head;
+    usize capacity;
+} StackAllocator;
+
+StackAllocator stack_allocator_init(u8 *data, usize size);
+#define STACK_ALLOC_BEGIN(sz) u8 _sa_data[sz] = {0}; StackAllocator _sa = stack_allocator_init(_sa_data, (sz))
+#define STACK_ALLOC (&_sa.allocator)
+
+void *stack_allocator_alloc(void *ctx, usize size);
+
 /* Generic Array API */
 
 #define Array(T) struct {T *items; usize len; usize cap;}
+
+// Compute length of compile-time array
+#define array_len(a) (sizeof(a) / sizeof(a[0]))
 
 #define array_init_capacity(allocator, array, capacity) do { \
     (array)->items = (typeof((array)->items))(allocator)->alloc((allocator), capacity * sizeof(*(array)->items)); \

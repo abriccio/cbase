@@ -1,9 +1,4 @@
 #include "allocator.h"
-#include "unistd.h"
-
-static usize page_size() {
-    return (usize)getpagesize();
-}
 
 static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
     ArenaAllocation *new = (ArenaAllocation*)malloc(sizeof(ArenaAllocation));
@@ -15,7 +10,7 @@ static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
     memset(new, 0, sizeof(*new));
     if (capacity == 0)
         return new;
-    
+
     new->data = (u8*)malloc(capacity);
     if (!new->data) {
         err("Failed to allocate new data\n");
@@ -127,12 +122,18 @@ void arena_deinit(Arena *a) {
 
 // TEMP ARENA
 
+static void *_temp_arena_realloc(void *ta, void *ptr, usize size) {
+    return temp_arena_alloc(ta, size);
+}
+
+static void _temp_arena_free(void *ta, void *ptr) {}
+
 TempArena temp_arena_init(usize capacity) {
     return (TempArena){
         .allocator = {
             .alloc = temp_arena_alloc,
-            .realloc = NULL,
-            .free = NULL,
+            .realloc = _temp_arena_realloc,
+            .free = _temp_arena_free,
         },
         .data = malloc(capacity),
         .capacity = capacity,
@@ -150,6 +151,7 @@ void *temp_arena_alloc(void *ta, usize size) {
     assert(arena->head + size <= arena->capacity);
     void *result = arena->data + arena->head;
     arena->head += size;
+    memset(result, 0, size);
     return result;
 }
 
@@ -157,3 +159,31 @@ void temp_arena_reset(TempArena *ta) {
     ta->head = 0;
 }
 
+// STACK ALLOCATOR
+
+void *_stack_allocator_realloc(void *ctx, void *ptr, usize size) {
+    return stack_allocator_alloc(ctx, size);
+}
+
+StackAllocator stack_allocator_init(u8 *data, usize size) {
+    return (StackAllocator){
+        .allocator = (Allocator){
+            .alloc = stack_allocator_alloc,
+            .realloc = _stack_allocator_realloc,
+        },
+        .data = data,
+        .capacity = size,
+    };
+}
+
+void *stack_allocator_alloc(void *ctx, usize size) {
+    StackAllocator *sa = (StackAllocator*)ctx;
+    if (sa->head + size > sa->capacity) {
+        err("Stack allocator full\n");
+        return NULL;
+    }
+    void *res = sa->data + sa->head;
+    sa->head += size;
+    memset(res, 0, size);
+    return res;
+}
