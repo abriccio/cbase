@@ -176,6 +176,12 @@ StackAllocator stack_allocator_init(u8 *data, usize size) {
     };
 }
 
+void _stack_allocator_reset(void *ctx) {
+    StackAllocator *sa = (StackAllocator*)ctx;
+    memset(sa->data, 0, sa->head);
+    sa->head = 0;
+}
+
 void *stack_allocator_alloc(void *ctx, usize size) {
     StackAllocator *sa = (StackAllocator*)ctx;
     if (sa->head + size > sa->capacity) {

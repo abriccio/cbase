@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <copyfile.h>
 
 typedef u32 FileType;
 enum FileTypes {
@@ -29,6 +30,8 @@ typedef struct {
     FILE* fd;
     usize size;
 } File;
+
+// TODO Change const char * to String where needed, temp allocate a cstring within each function
 
 // Opens a file from a path, with write permissions
 static File file_open(const char *path, FileOpenFlag flags) {
@@ -51,6 +54,11 @@ static File file_open(const char *path, FileOpenFlag flags) {
     fseek(fd, 0, SEEK_SET);
 
     return (File){.fd = fd, .size = len};
+}
+
+static bool file_exists(const char *path) {
+    struct stat s;
+    return stat(path, &s) == 0;
 }
 
 static void file_seek_begin(File f) {
@@ -96,9 +104,40 @@ static void file_close(File f) {
     fclose(f.fd);
 }
 
-static void file_copy(Allocator *alloc, File src, File dst) {
-    u8 *src_data = file_read_full_alloc(src, alloc);
-    file_write(dst, src_data, src.size);
+static bool file_copy(String src, String dst) {
+    STACK_ALLOC_BEGIN(1024);
+    const char *csrc = string_to_cstring(STACK_ALLOC, src);
+    const char *cdst = string_to_cstring(STACK_ALLOC, dst);
+
+    if (!file_exists(csrc)) {
+        err("Cannot copy file: %s -- does not exist\n", csrc);
+        return false;
+    }
+
+    int res = copyfile(csrc, cdst, NULL, COPYFILE_ALL);
+    if (res < 0) {
+        err("Failed to copy file: %s -- %s\n", csrc, strerror(errno));
+        return false;
+    }
+    return true;
+}
+
+static bool file_copy_recursive(String src, String dst) {
+    STACK_ALLOC_BEGIN(1024);
+    const char *csrc = string_to_cstring(STACK_ALLOC, src);
+    const char *cdst = string_to_cstring(STACK_ALLOC, dst);
+
+    if (!file_exists(csrc)) {
+        err("Cannot copy file: %s -- does not exist\n", csrc);
+        return false;
+    }
+
+    int res = copyfile(csrc, cdst, NULL, COPYFILE_ALL | COPYFILE_RECURSIVE);
+    if (res < 0) {
+        err("Failed to copy file: %s -- %s\n", csrc, strerror(errno));
+        return false;
+    }
+    return true;
 }
 
 static bool file_rename(const char *name, const char *old) {

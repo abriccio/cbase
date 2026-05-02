@@ -124,7 +124,7 @@ void temp_arena_reset(TempArena *ta);
 /*
  * STACK ALLOCATOR API
  * Stack-based allocator with no need for freeing. Realloc operation is the same as allocating.
- * Can reset the allocator head with the reset procedure.
+ * Can reset the allocator head with STACK_ALLOC_RESET
  */
 
 typedef struct {
@@ -135,7 +135,10 @@ typedef struct {
 } StackAllocator;
 
 StackAllocator stack_allocator_init(u8 *data, usize size);
+static void _stack_allocator_reset(void *ctx);
 #define STACK_ALLOC_BEGIN(sz) u8 _sa_data[sz] = {0}; StackAllocator _sa = stack_allocator_init(_sa_data, (sz))
+// Reset the allocator head to 0
+#define STACK_ALLOC_RESET _stack_allocator_reset(&_sa)
 #define STACK_ALLOC (&_sa.allocator)
 
 void *stack_allocator_alloc(void *ctx, usize size);
