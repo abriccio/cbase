@@ -34,7 +34,9 @@ typedef struct {
 // TODO Change const char * to String where needed, temp allocate a cstring within each function
 
 // Opens a file from a path, with write permissions
-static File file_open(const char *path, FileOpenFlag flags) {
+static File file_open(String path, FileOpenFlag flags) {
+    STACK_ALLOC_BEGIN(512);
+    char *cstr = cstring_from_string(STACK_ALLOC, path);
     char *mode;
     if (flags & FileOpen_ReadOnly)
         mode = "r";
@@ -43,9 +45,9 @@ static File file_open(const char *path, FileOpenFlag flags) {
 
     // TODO handle append write
 
-    FILE *fd = fopen(path, mode);
+    FILE *fd = fopen(cstr, mode);
     if (!fd) {
-        err("Failed to open %s: %s\n", path, strerror(errno));
+        err("Failed to open %s: %s\n", cstr, strerror(errno));
         return (File){0};
     }
     usize len = 0;
@@ -56,9 +58,11 @@ static File file_open(const char *path, FileOpenFlag flags) {
     return (File){.fd = fd, .size = len};
 }
 
-static bool file_exists(const char *path) {
+static bool file_exists(String path) {
+    STACK_ALLOC_BEGIN(512);
+    char *cstr = cstring_from_string(STACK_ALLOC, path);
     struct stat s;
-    return stat(path, &s) == 0;
+    return stat(cstr, &s) == 0;
 }
 
 static void file_seek_begin(File f) {
@@ -69,13 +73,13 @@ static void file_seek_end(File f) {
     fseek(f.fd, 0, SEEK_END);
 }
 
-static bool file_read_full(File f, u8 *buf) {
+static bool file_read_full(File f, char *buf) {
     usize read = fread(buf, 1, f.size, f.fd);
     return read == f.size;
 }
 
-static u8 *file_read_full_alloc(File f, Allocator *alloc) {
-    u8 *buf = (u8*)alloc->alloc(alloc, f.size);
+static char *file_read_full_alloc(File f, Allocator *alloc) {
+    char *buf = (char*)alloc->alloc(alloc, f.size);
     if (!file_read_full(f, buf)) {
         alloc->free(alloc, buf);
         return NULL;
@@ -83,8 +87,8 @@ static u8 *file_read_full_alloc(File f, Allocator *alloc) {
     return buf;
 }
 
-static void file_write(File f, u8 *bytes, usize size) {
-    fwrite(bytes, 1, size, f.fd);
+static void file_write(File f, void *data, usize size) {
+    fwrite(data, 1, size, f.fd);
 }
 
 static void file_write_string(File f, String str) {
@@ -105,11 +109,11 @@ static void file_close(File f) {
 }
 
 static bool file_copy(String src, String dst) {
-    STACK_ALLOC_BEGIN(1024);
+    STACK_ALLOC_BEGIN(512);
     const char *csrc = cstring_from_string(STACK_ALLOC, src);
     const char *cdst = cstring_from_string(STACK_ALLOC, dst);
 
-    if (!file_exists(csrc)) {
+    if (!file_exists(src)) {
         err("Cannot copy file: %s -- does not exist\n", csrc);
         return false;
     }
@@ -123,11 +127,11 @@ static bool file_copy(String src, String dst) {
 }
 
 static bool file_copy_recursive(String src, String dst) {
-    STACK_ALLOC_BEGIN(1024);
+    STACK_ALLOC_BEGIN(512);
     const char *csrc = cstring_from_string(STACK_ALLOC, src);
     const char *cdst = cstring_from_string(STACK_ALLOC, dst);
 
-    if (!file_exists(csrc)) {
+    if (!file_exists(src)) {
         err("Cannot copy file: %s -- does not exist\n", csrc);
         return false;
     }
@@ -151,7 +155,7 @@ static bool file_rename(const char *name, const char *old) {
 }
 
 static bool file_delete(String path) {
-    STACK_ALLOC_BEGIN(256);
+    STACK_ALLOC_BEGIN(512);
     char *cstr = cstring_from_string(STACK_ALLOC, path);
     if (remove(cstr) != 0) {
         err("Failed to remove file: %s -- %s\n", cstr, strerror(errno));
