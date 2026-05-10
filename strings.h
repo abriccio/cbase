@@ -168,7 +168,7 @@ static String string_clone(Allocator *alloc, String str) {
     return out;
 }
 
-static char *string_to_cstring(Allocator *alloc, String str) {
+static char *cstring_from_string(Allocator *alloc, String str) {
     char *out = (char*)alloc->alloc(alloc, str.len + 1);
     memcpy(out, str.data, str.len);
     out[str.len] = 0;

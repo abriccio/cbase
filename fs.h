@@ -106,8 +106,8 @@ static void file_close(File f) {
 
 static bool file_copy(String src, String dst) {
     STACK_ALLOC_BEGIN(1024);
-    const char *csrc = string_to_cstring(STACK_ALLOC, src);
-    const char *cdst = string_to_cstring(STACK_ALLOC, dst);
+    const char *csrc = cstring_from_string(STACK_ALLOC, src);
+    const char *cdst = cstring_from_string(STACK_ALLOC, dst);
 
     if (!file_exists(csrc)) {
         err("Cannot copy file: %s -- does not exist\n", csrc);
@@ -124,8 +124,8 @@ static bool file_copy(String src, String dst) {
 
 static bool file_copy_recursive(String src, String dst) {
     STACK_ALLOC_BEGIN(1024);
-    const char *csrc = string_to_cstring(STACK_ALLOC, src);
-    const char *cdst = string_to_cstring(STACK_ALLOC, dst);
+    const char *csrc = cstring_from_string(STACK_ALLOC, src);
+    const char *cdst = cstring_from_string(STACK_ALLOC, dst);
 
     if (!file_exists(csrc)) {
         err("Cannot copy file: %s -- does not exist\n", csrc);
@@ -150,9 +150,11 @@ static bool file_rename(const char *name, const char *old) {
     return result;
 }
 
-static bool file_delete(const char *path) {
-    if (remove(path) != 0) {
-        err("Failed to remove file %s: %s\n", path, strerror(errno));
+static bool file_delete(String path) {
+    STACK_ALLOC_BEGIN(256);
+    char *cstr = cstring_from_string(STACK_ALLOC, path);
+    if (remove(cstr) != 0) {
+        err("Failed to remove file: %s -- %s\n", cstr, strerror(errno));
         return false;
     }
     return true;
