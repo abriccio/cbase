@@ -219,6 +219,39 @@ static bool string_match_no_case(String a, String b) {
         return false;
 }
 
+static String string_to_snake_case(Allocator *alloc, String str) {
+    // Count num capitals - 1 -> num underscores to add
+    int num_capitals = 0;
+    for (int i = 0; i < str.len; ++i) {
+        if (str.data[i] >= 'A' && str.data[i] <= 'Z') {
+            num_capitals++;
+        }
+    }
+    int num_under = num_capitals - 1;
+
+    String res = {
+        .data = (char*)alloc->alloc(alloc, str.len + num_under),
+        .len = str.len + num_under,
+    };
+
+    int j = 0;
+    for (int i = 0; i < str.len; ++i) {
+        if (str.data[i] >= 'A' && str.data[i] <= 'Z') {
+            if (i > 0) {
+                res.data[j] = '_';
+                j++;
+            }
+            res.data[j] = str.data[i] + 32;
+            j++;
+        } else {
+            res.data[j] = str.data[i];
+            j++;
+        }
+    }
+
+    return res;
+}
+
 static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int count, int capacity) {
     StringArray sa = {0};
     String *buf = (String*)alloc->alloc(alloc, sizeof(String) * capacity);
