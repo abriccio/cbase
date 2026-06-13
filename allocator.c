@@ -120,43 +120,19 @@ void arena_deinit(Arena *a) {
 }
 
 
-// TEMP ARENA
-
-static void *_temp_arena_realloc(void *ta, void *ptr, usize size) {
-    return temp_arena_alloc(ta, size);
-}
+// TEMP ALLOC
 
 static void _temp_arena_free(void *ta, void *ptr) {}
 
-TempArena temp_arena_init(usize capacity) {
-    return (TempArena){
-        .allocator = {
-            .alloc = temp_arena_alloc,
-            .realloc = _temp_arena_realloc,
-            .free = _temp_arena_free,
-        },
-        .data = malloc(capacity),
-        .capacity = capacity,
-        .head = 0,
+TempAlloc temp_alloc_begin(Arena *arena) {
+    return (TempAlloc){
+        .arena = arena,
+        .start = arena->last->head,
     };
 }
 
-
-void temp_arena_deinit(TempArena *ta) {
-    free(ta->data);
-}
-
-void *temp_arena_alloc(void *ta, usize size) {
-    TempArena *arena = (TempArena*)ta;
-    assert(arena->head + size <= arena->capacity);
-    void *result = arena->data + arena->head;
-    arena->head += size;
-    memset(result, 0, size);
-    return result;
-}
-
-void temp_arena_reset(TempArena *ta) {
-    ta->head = 0;
+void temp_alloc_end(TempAlloc *ta) {
+    ta->arena->last->head = ta->start;
 }
 
 // STACK ALLOCATOR

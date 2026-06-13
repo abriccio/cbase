@@ -104,28 +104,30 @@ void *arena_realloc(void *arena, void *, usize);
 void arena_free(void *arena, void *);
 
 /*
-    TEMP ARENA API
-    Fixed-size Arena for small allocations, scratch space, per-frame allocations, etc.
-    No procedures for freeing or reallocating, only resetting the allocation head.
+    TEMP ALLOC API
+    Not an Allocator but an API on top of existing Arena for small allocations,
+    scratch space, per-frame allocations, etc. These functions create a
+    "bookmark" for the backing arena, which will be rewound to for memory re-use
+    after the temp region is ended. You will use regular Arena procedures in
+    between calls to temp_alloc_begin and temp_alloc_end.
  */
 
 typedef struct {
-    Allocator allocator;
-    u8 *data;
-    usize head;
-    usize capacity;
-} TempArena;
+    Arena *arena;
+    usize start;
+} TempAlloc;
 
-TempArena temp_arena_init(usize capacity);
-void temp_arena_deinit(TempArena *ta);
-void *temp_arena_alloc(void *arena, usize size);
-void temp_arena_reset(TempArena *ta);
+TempAlloc temp_alloc_begin(Arena *);
+void temp_alloc_end(TempAlloc *ta);
 
 /*
  * STACK ALLOCATOR API
  * Stack-based allocator with no need for freeing. Realloc operation is the same as allocating.
  * Can reset the allocator head with STACK_ALLOC_RESET
  */
+
+ // TODO Make this just an API on top of regular Arena, we just give the Arena a stack-alloc'd
+ // backing buffer
 
 typedef struct {
     Allocator allocator;
