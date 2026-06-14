@@ -23,7 +23,7 @@ typedef struct {
     void (*free)(void *ctx, void *ptr);
 } Allocator;
 
-static bool is_power_of_two(usize n) {
+static bool32 is_power_of_two(usize n) {
     return (n & (n - 1)) == 0;
 }
 
