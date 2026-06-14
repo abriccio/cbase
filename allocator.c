@@ -1,71 +1,72 @@
 #include "allocator.h"
 
-static ArenaAllocation *_arena_new_allocation(Arena *a, usize capacity) {
-    ArenaAllocation *new = (ArenaAllocation*)malloc(sizeof(ArenaAllocation));
-    if (!a->first) {
-        a->first = new;
+static void *_mem_reserve(usize size) {
+    void *ptr = mmap(NULL, size, 0, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (ptr == MAP_FAILED) {
+        err("Memory reserve failed: %s\n", strerror(errno));
+    }
+
+    return ptr;
+}
+
+static void _mem_commit(void *ptr, usize size) {
+    if (mprotect(ptr, size, PROT_READ | PROT_WRITE) < 0) {
+        err("Memory commit failed: %s\n", strerror(errno));
+    }
+}
+
+static void _mem_release(void *ptr, usize size) {
+    munmap(ptr, size);
+}
+
+Arena *arena_init_opt(ArenaOptions opt) {
+    usize reserve = opt.reserve_size ? next_power_of_two(opt.reserve_size) : ARENA_DEFAULT_RESERVE;
+    usize commit = opt.commit_size ? next_power_of_two(opt.commit_size) : ARENA_DEFAULT_COMMIT;
+    if (commit > reserve) {
+        reserve <<= 10;
+    }
+    Arena *a;
+    if (opt.backing_buffer) {
+        a = (Arena*)opt.backing_buffer;
     } else {
-        a->last->next = new;
-    }
-    memset(new, 0, sizeof(*new));
-    if (capacity == 0)
-        return new;
-
-    new->data = (u8*)malloc(capacity);
-    if (!new->data) {
-        err("Failed to allocate new data\n");
-        return NULL;
-    }
-    new->capacity = capacity;
-    memset(new->data, 0, capacity);
-    a->last = new;
-
-    return new;
-}
-
-static bool _arena_allocation_has_capacity_for_size(ArenaAllocation *a, usize size, usize align) {
-    void *aligned = align_forward((usize)a->data + a->head, align);
-    usize delta = (usize)aligned - (usize)a->data;
-    if (size + delta <= a->capacity) {
-        return true;
+        a = _mem_reserve(reserve);
+        _mem_commit(a, commit);
     }
 
-    return false;
-}
+    a->current = a;
+    a->reserve = reserve;
+    a->commit = commit;
+    a->head = ARENA_HEADER_SIZE;
 
-static ArenaAllocation *_arena_allocation_for_size(Arena *a, usize size) {
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        if (_arena_allocation_has_capacity_for_size(node, size, DEFAULT_ALIGN))
-            return node;
-    }
-
-    return _arena_new_allocation(a, size);
-}
-
-Arena arena_init(usize capacity) {
-    Arena a = {0};
-    a.allocator = (Allocator){
+    a->allocator = (Allocator){
         .alloc = arena_alloc,
         .realloc = arena_realloc,
         .free = arena_free,
     };
-    _arena_new_allocation(&a, capacity);
     return a;
 }
 
-void arena_ensure_capacity(Arena *a, usize capacity) {
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        if (_arena_allocation_has_capacity_for_size(node, capacity, DEFAULT_ALIGN)) {
-            return;
-        }
-    }
-
-    _arena_new_allocation(a, capacity);
+Arena *arena_init() {
+    return arena_init_opt((ArenaOptions){.reserve_size=ARENA_DEFAULT_RESERVE, .commit_size=ARENA_DEFAULT_COMMIT});
 }
 
-usize arena_query_capacity(Arena *a) {
+// Checks if arena can hold size, otherwise adds a new arena to the list
+void arena_ensure_reserve_size(Arena *a, usize size) {
+    Arena *cur = a->current;
+    usize size_actual = cur->head + size;
+    if (size_actual > cur->reserve) {
+        // make new arena
+        Arena *new = arena_init_opt((ArenaOptions){.reserve_size = next_power_of_two(size_actual)});
+        new->prev = cur;
+        for (Arena *n = cur; n != NULL; n = n->prev) {
+            n->current = new;
+        }
+    }
+}
+
+usize arena_query_size(Arena *a) {
     usize sum = 0;
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
+    for (Arena *node = a->current; node != NULL; node = node->prev) {
         sum += node->head;
     }
 
@@ -75,19 +76,24 @@ usize arena_query_capacity(Arena *a) {
 void *arena_alloc(void *ctx, usize size) {
     usize align = DEFAULT_ALIGN;
     Arena *a = (Arena*)ctx;
-    ArenaAllocation *head_alloc = _arena_allocation_for_size(a, size);
-    void *data = &head_alloc->data[head_alloc->head];
-    void *aligned = align_forward((usize)data, align);
-    usize delta = ((usize)aligned - (usize)data);
-    if (head_alloc->head + size + delta <= head_alloc->capacity) {
-        head_alloc->head += delta + size;
-        memset(aligned, 0, size);
+    arena_ensure_reserve_size(a, size);
+    Arena *cur = a->current;
 
-        return aligned;
+    usize head = (usize)cur + cur->head;
+    void *aligned = align_forward(head, align);
+    usize delta = (usize)aligned - head;
+    usize req_capacity = cur->head + delta + size;
+    if (req_capacity > cur->commit) {
+        usize commit_size = next_power_of_two(size);
+        _mem_commit((u8*)cur + cur->commit, commit_size);
+        cur->commit += commit_size;
     }
 
-    err("Arena out of memory\n");
-    return NULL;
+    memset(aligned, 0, size);
+
+    cur->head += size + delta;
+
+    return aligned;
 }
 
 // For now, simply allocates new memory without checking if old memory can be
@@ -103,36 +109,38 @@ void arena_free(void *ctx, void *ptr) {}
 
 // Resets the head to zero, allowing for re-use of arena without reallocating
 void arena_reset(Arena *a) {
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        node->head = 0;
+    for (Arena *cur = a->current; cur != NULL; cur = cur->prev) {
+        arena_set_head(cur, ARENA_HEADER_SIZE);
     }
 }
 
+usize arena_get_head(Arena *a) {
+    return a->current->head;
+}
+
 void arena_set_head(Arena *a, usize head) {
-    a->last->head = head;
+    a->head = head >= ARENA_HEADER_SIZE ? head : ARENA_HEADER_SIZE;
 }
 
 void arena_deinit(Arena *a) {
     if (!a) return;
-    for (ArenaAllocation *node = a->first; node != NULL; node = node->next) {
-        free(node->data);
+    for (Arena *n = a->current, *prev = NULL; n != NULL; n = prev) {
+        prev = n->prev;
+        _mem_release(n, n->reserve);
     }
 }
 
-
 // TEMP ALLOC
-
-static void _temp_arena_free(void *ta, void *ptr) {}
 
 TempAlloc temp_alloc_begin(Arena *arena) {
     return (TempAlloc){
         .arena = arena,
-        .start = arena->last->head,
+        .start = arena->current->head,
     };
 }
 
 void temp_alloc_end(TempAlloc *ta) {
-    ta->arena->last->head = ta->start;
+    ta->arena->current->head = ta->start;
 }
 
 // STACK ALLOCATOR

@@ -2,6 +2,8 @@
 #define ALLOCATOR_H
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <errno.h>
 #include <assert.h>
 #include <unistd.h>
 
@@ -45,60 +47,40 @@ static usize page_size() {
     return (usize)getpagesize();
 }
 
-/* LIBC Allocator API */
-
-static void *heap_allocate(void *ctx, usize size) {
-    (void)ctx;
-    return malloc(size);
-}
-
-static void *heap_realloc(void *ctx, void *ptr, usize size) {
-    (void)ctx;
-    return realloc(ptr, size);
-}
-
-static void heap_free(void *ctx, void *ptr) {
-    (void)ctx;
-    free(ptr);
-}
-
-typedef struct {
-    Allocator allocator;
-} LibCAllocator;
-
-static LibCAllocator heap_allocator_init() {
-    return (LibCAllocator){
-        .allocator = {
-            .alloc = heap_allocate,
-            .realloc = heap_realloc,
-            .free = heap_free,
-        },
-    };
-}
-
 /* ARENA API */
 
-// The backing allocation from which the arena passes out new allocation references
-typedef struct ArenaAllocation {
-    struct ArenaAllocation *next;
-    u8 *data;
-    usize head;
-    usize capacity;
-} ArenaAllocation;
+#define ARENA_DEFAULT_RESERVE MB(64)
+#define ARENA_DEFAULT_COMMIT KB(64)
 
-// Growable arena allocator which uses malloc as its backing allocator
 typedef struct {
-    Allocator allocator;
-    ArenaAllocation *first;
-    ArenaAllocation *last;
-} Arena;
+    // Specify the total amount of virtual memory to reserve
+    usize reserve_size;
+    // Specify the initial amount of memory to commit (i.e. make accessible)
+    usize commit_size;
+    // Optionally provide the Arena with a backing buffer which it will perform all allocations against
+    u8 *backing_buffer;
+} ArenaOptions;
 
-Arena arena_init(usize capacity);
+typedef struct Arena Arena;
+struct Arena {
+    Allocator allocator;
+    Arena *prev;
+    Arena *current;
+    usize head;
+    usize reserve;
+    usize commit;
+};
+#define ARENA_HEADER_SIZE sizeof(Arena)
+
+Arena *arena_init_opt(ArenaOptions opt);
+// Create an Arena with default options
+Arena *arena_init();
 void arena_deinit(Arena *a);
-void arena_ensure_capacity(Arena *a, usize capacity);
-usize arena_query_capacity(Arena *a);
+void arena_ensure_reserve_size(Arena *a, usize capacity);
+usize arena_query_size(Arena *a);
 void arena_reset(Arena *a);
 void arena_set_head(Arena *a, usize head);
+usize arena_get_head(Arena *a);
 void *arena_alloc(void *arena, usize);
 void *arena_realloc(void *arena, void *, usize);
 void arena_free(void *arena, void *);
@@ -110,6 +92,8 @@ void arena_free(void *arena, void *);
     "bookmark" for the backing arena, which will be rewound to for memory re-use
     after the temp region is ended. You will use regular Arena procedures in
     between calls to temp_alloc_begin and temp_alloc_end.
+
+    If your desired lifetime is entirely local, consider using StackAllocator.
  */
 
 typedef struct {
