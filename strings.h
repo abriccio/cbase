@@ -6,7 +6,8 @@
 #include "types.h"
 #define STB_SPRINTF_IMPLEMENTATION
 #include "stb_sprintf.h"
-#include <stdio.h>
+
+#include <unistd.h>
 #include <wchar.h>
 
 typedef int Utf16BOM;
@@ -175,32 +176,32 @@ static char *cstring_from_string(Allocator *alloc, String str) {
     return out;
 }
 
-static bool string_match(String a, String b) {
-    if (a.len != b.len) return false;
-    if (a.data == b.data) return true;
+static bool32 string_match(String a, String b) {
+    if (a.len != b.len) return FALSE;
+    if (a.data == b.data) return TRUE;
     for (int i = 0; i < a.len; ++i) {
         if (a.data[i] != b.data[i]) {
-            return false;
+            return FALSE;
         }
     }
 
-    return true;
+    return TRUE;
 }
 
-static bool const_string_match(ConstString a, ConstString b) {
-    if (a.len != b.len) return false;
-    if (a.data == b.data) return true;
+static bool32 const_string_match(ConstString a, ConstString b) {
+    if (a.len != b.len) return FALSE;
+    if (a.data == b.data) return TRUE;
     for (int i = 0; i < a.len; ++i) {
-        if (a.data[i] != b.data[i]) return false;
+        if (a.data[i] != b.data[i]) return FALSE;
     }
 
-    return true;
+    return TRUE;
 }
 
 // Reminder that uppercase alpha = 65 - 90
 // Lowercase alpha = 97 - 122
-static bool string_match_no_case(String a, String b) {
-    if (a.len != b.len) return false;
+static bool32 string_match_no_case(String a, String b) {
+    if (a.len != b.len) return FALSE;
     int diff = 0;
     // 'a'-'A'=32, 'z'-'Z'=32
     int case_diff = 32;
@@ -214,9 +215,9 @@ static bool string_match_no_case(String a, String b) {
     }
 
     if (diff == 0)
-        return true;
+        return TRUE;
     else
-        return false;
+        return FALSE;
 }
 
 static String string_to_snake_case(Allocator *alloc, String str) {
@@ -480,14 +481,12 @@ static String path_split(String *path) {
 }
 
 static void string_print(String str) {
-    for (int i = 0; i < str.len; ++i) {
-        putc(str.data[i], stdout);
-    }
+    write(STDOUT_FILENO, str.data, str.len);
 }
 
 static void string_println(String str) {
     string_print(str);
-    putc('\n', stdout);
+    write(STDOUT_FILENO, "\n", 1);
 }
 
 static String string_print_buf(char *buf, usize size, const char *fmt, ...) {

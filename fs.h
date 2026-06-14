@@ -58,7 +58,7 @@ static File file_open(String path, FileOpenFlag flags) {
     return (File){.fd = fd, .size = len};
 }
 
-static bool file_exists(String path) {
+static bool32 file_exists(String path) {
     STACK_ALLOC_BEGIN(512);
     char *cstr = cstring_from_string(STACK_ALLOC, path);
     struct stat s;
@@ -73,7 +73,7 @@ static void file_seek_end(File f) {
     fseek(f.fd, 0, SEEK_END);
 }
 
-static bool file_read_full(File f, char *buf) {
+static bool32 file_read_full(File f, char *buf) {
     usize read = fread(buf, 1, f.size, f.fd);
     return read == f.size;
 }
@@ -108,60 +108,60 @@ static void file_close(File f) {
     fclose(f.fd);
 }
 
-static bool file_copy(String src, String dst) {
+static bool32 file_copy(String src, String dst) {
     STACK_ALLOC_BEGIN(512);
     const char *csrc = cstring_from_string(STACK_ALLOC, src);
     const char *cdst = cstring_from_string(STACK_ALLOC, dst);
 
     if (!file_exists(src)) {
         err("Cannot copy file: %s -- does not exist\n", csrc);
-        return false;
+        return FALSE;
     }
 
     int res = copyfile(csrc, cdst, NULL, COPYFILE_ALL);
     if (res < 0) {
         err("Failed to copy file: %s -- %s\n", csrc, strerror(errno));
-        return false;
+        return FALSE;
     }
-    return true;
+    return TRUE;
 }
 
-static bool file_copy_recursive(String src, String dst) {
+static bool32 file_copy_recursive(String src, String dst) {
     STACK_ALLOC_BEGIN(512);
     const char *csrc = cstring_from_string(STACK_ALLOC, src);
     const char *cdst = cstring_from_string(STACK_ALLOC, dst);
 
     if (!file_exists(src)) {
         err("Cannot copy file: %s -- does not exist\n", csrc);
-        return false;
+        return FALSE;
     }
 
     int res = copyfile(csrc, cdst, NULL, COPYFILE_ALL | COPYFILE_RECURSIVE);
     if (res < 0) {
         err("Failed to copy file: %s -- %s\n", csrc, strerror(errno));
-        return false;
+        return FALSE;
     }
-    return true;
+    return TRUE;
 }
 
-static bool file_rename(const char *name, const char *old) {
-    bool result = true;
+static bool32 file_rename(const char *name, const char *old) {
+    bool32 result = TRUE;
     if (rename(old, name) != 0) {
         err("Failed to rename %s to %s: %s\n", old, name, strerror(errno));
-        result = false;
+        result = FALSE;
     }
 
     return result;
 }
 
-static bool file_delete(String path) {
+static bool32 file_delete(String path) {
     STACK_ALLOC_BEGIN(512);
     char *cstr = cstring_from_string(STACK_ALLOC, path);
     if (remove(cstr) != 0) {
         err("Failed to remove file: %s -- %s\n", cstr, strerror(errno));
-        return false;
+        return FALSE;
     }
-    return true;
+    return TRUE;
 }
 
 static usize file_mtime(const char *path) {
@@ -176,14 +176,14 @@ static usize file_mtime(const char *path) {
 typedef struct DirIterator {
     struct dirent *file_info;
     FileType type;
-    bool ok;
+    bool32 ok;
 } DirIterator;
 
 static String file_ext(char *path) {
     return string_split_after(string(path), '.');
 }
 
-static bool dir_exists(String path) {
+static bool32 dir_exists(String path) {
     STACK_ALLOC_BEGIN(512);
     char *cstr = (char*)STACK_ALLOC->alloc(STACK_ALLOC, path.len + 1);
     memcpy(cstr, path.data, path.len);
@@ -192,7 +192,7 @@ static bool dir_exists(String path) {
     return result == 0;
 }
 
-static bool _make_dir_internal(String path) {
+static bool32 _make_dir_internal(String path) {
     STACK_ALLOC_BEGIN(512);
     char *cstr = (char*)STACK_ALLOC->alloc(STACK_ALLOC, path.len + 1);
     memcpy(cstr, path.data, path.len);
@@ -200,32 +200,32 @@ static bool _make_dir_internal(String path) {
     if (error != 0) {
         if (errno == EEXIST) {
             println("Dir exists: %s", cstr);
-            return true;
+            return TRUE;
         }
         err("Failed to make dir: %s: %d %s\n", cstr, errno, strerror(errno));
-        return false;
+        return FALSE;
     }
 
     dbg("Created dir: %s", cstr);
-    return true;
+    return TRUE;
 }
 
-static bool _make_dir_recursive(String path) {
+static bool32 _make_dir_recursive(String path) {
     char *ptr = path.data;
     for (int i = 0; i < path.len; ++i) {
         if (ptr[i] == '/' && i != 0) {
             String dir = {.data = ptr, .len = i};
             if (!_make_dir_internal(dir))
-                return false;
+                return FALSE;
         }
     }
 
-    return true;
+    return TRUE;
 }
 
-static bool make_dir(String path) {
+static bool32 make_dir(String path) {
     if (dir_exists(path)) {
-        return false;
+        return FALSE;
     }
     return _make_dir_recursive(path);
 }
@@ -242,7 +242,7 @@ static DirIterator dir_iter_next(DIR *dir) {
         iter.type = FileType_File;
     }
 
-    iter.ok = true;
+    iter.ok = TRUE;
 
     return iter;
 }
