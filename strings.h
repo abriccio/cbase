@@ -20,14 +20,14 @@ typedef enum {
 /* STRING API */
 
 typedef struct {
-    char *data;
+    const char *data;
     int len;
 } String;
 
-typedef struct {
-    const char *data;
-    int len;
-} ConstString;
+// typedef struct {
+//     const char *data;
+//     int len;
+// } ConstString;
 
 typedef struct {
     u16 *data;
@@ -55,7 +55,7 @@ static int string_len(const char *cstr) {
 
 #define STR_LIT(str) (String){.data = (str), .len = sizeof((str))-1}
 
-static String string(char *cstr) {
+static String string(const char *cstr) {
     int len = string_len(cstr);
     return (String){
         .data = cstr,
@@ -63,17 +63,17 @@ static String string(char *cstr) {
     };
 }
 
-static ConstString const_string(const char *cstr) {
-    int len = string_len(cstr);
-    return (ConstString){
-        .data = cstr,
-        .len = len,
-    };
-}
+// static ConstString const_string(const char *cstr) {
+//     int len = string_len(cstr);
+//     return (ConstString){
+//         .data = cstr,
+//         .len = len,
+//     };
+// }
 
 static String string_from_bytes(u8 *bytes, int len) {
     return (String){
-        .data = (char*)bytes,
+        .data = (const char*)bytes,
         .len = len,
     };
 }
@@ -90,7 +90,8 @@ static Utf16BOM string16_bom(const u16 first_char) {
 
 static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, u8 *utf16, size_t utf16_size) {
     String str = {.len = 0};
-    char *ptr = str.data = (char*)alloc->alloc(alloc, utf16_size / 2 + 1);
+    char *ptr = (char*)alloc->alloc(alloc, utf16_size / 2 + 1);
+    str.data = ptr;
 
     switch (byte_order) {
     case Utf16None:
@@ -164,8 +165,9 @@ static u16 *utf16_from_utf8(Allocator *alloc, const char *str) {
 
 static String string_clone(Allocator *alloc, String str) {
     String out = {.len = str.len};
-    out.data = (char*)alloc->alloc(alloc, str.len);
-    memcpy(out.data, str.data, str.len);
+    char *data = (char*)alloc->alloc(alloc, str.len);
+    out.data = data;
+    memcpy(data, str.data, str.len);
     return out;
 }
 
@@ -188,15 +190,15 @@ static bool32 string_match(String a, String b) {
     return TRUE;
 }
 
-static bool32 const_string_match(ConstString a, ConstString b) {
-    if (a.len != b.len) return FALSE;
-    if (a.data == b.data) return TRUE;
-    for (int i = 0; i < a.len; ++i) {
-        if (a.data[i] != b.data[i]) return FALSE;
-    }
+// static bool32 const_string_match(ConstString a, ConstString b) {
+//     if (a.len != b.len) return FALSE;
+//     if (a.data == b.data) return TRUE;
+//     for (int i = 0; i < a.len; ++i) {
+//         if (a.data[i] != b.data[i]) return FALSE;
+//     }
 
-    return TRUE;
-}
+//     return TRUE;
+// }
 
 // Reminder that uppercase alpha = 65 - 90
 // Lowercase alpha = 97 - 122
@@ -230,22 +232,21 @@ static String string_to_snake_case(Allocator *alloc, String str) {
     }
     int num_under = num_capitals - 1;
 
-    String res = {
-        .data = (char*)alloc->alloc(alloc, str.len + num_under),
-        .len = str.len + num_under,
-    };
+    String res = { .len = str.len + num_under };
+    char *data = (char*)alloc->alloc(alloc, res.len);
+    res.data = data;
 
     int j = 0;
     for (int i = 0; i < str.len; ++i) {
         if (str.data[i] >= 'A' && str.data[i] <= 'Z') {
             if (i > 0) {
-                res.data[j] = '_';
+                data[j] = '_';
                 j++;
             }
-            res.data[j] = str.data[i] + 32;
+            data[j] = str.data[i] + 32;
             j++;
         } else {
-            res.data[j] = str.data[i];
+            data[j] = str.data[i];
             j++;
         }
     }
@@ -253,7 +254,7 @@ static String string_to_snake_case(Allocator *alloc, String str) {
     return res;
 }
 
-static StringArray string_array_from_cstrs(Allocator *alloc, char *cstrs[], int count, int capacity) {
+static StringArray string_array_from_cstrs(Allocator *alloc, const char *cstrs[], int count, int capacity) {
     StringArray sa = {0};
     String *buf = (String*)alloc->alloc(alloc, sizeof(String) * capacity);
     if (!buf) {
@@ -307,7 +308,8 @@ static String string_array_flatten(Allocator *alloc, const StringArray *sa) {
     }
 
     String str = {.len = sum};
-    char *ptr = str.data = (char*)alloc->alloc(alloc, sum + 1);
+    char *ptr = (char*)alloc->alloc(alloc, sum);
+    str.data = ptr;
 
     for (int i = 0; i < sa->count; ++i) {
         memcpy(ptr, sa->strings[i].data, sa->strings[i].len);
@@ -315,8 +317,6 @@ static String string_array_flatten(Allocator *alloc, const StringArray *sa) {
         *ptr = ' ';
         ptr += 1;
     }
-
-    ptr[sum] = 0;
 
     return str;
 }
@@ -343,8 +343,6 @@ static String string_concat(Allocator *alloc, String *strings, int count) {
         out_data += s->len;
     }
 
-    *out_data = 0;
-
     return out;
 }
 
@@ -356,11 +354,12 @@ static String path_join(Allocator *alloc, String *paths, int count) {
     }
     String str = {0};
     str.len = sep_count + size;
-    char *ptr = str.data = (char*)alloc->alloc(alloc, str.len + 1);
-    if (!str.data) {
+    char *ptr = (char*)alloc->alloc(alloc, str.len);
+    if (!ptr) {
         err("Allocation failed\n");
         return str;
     }
+    str.data = ptr;
     for (int i = 0; i < count; ++i) {
         String *path = &paths[i];
         memcpy(ptr, path->data, path->len);
@@ -370,8 +369,6 @@ static String path_join(Allocator *alloc, String *paths, int count) {
             ptr++;
         }
     }
-
-    *ptr = 0;
 
     return str;
 }
@@ -387,9 +384,8 @@ static int string_get_count_of(String str, char c) {
 }
 
 static String string_split_until(String str, char delim) {
-    char *ptr = str.data;
     for (int i = 0; i < str.len; ++i) {
-        char c = ptr[i];
+        const char c = str.data[i];
         if (c == delim) {
             return (String){
                 .data = str.data,
@@ -401,10 +397,10 @@ static String string_split_until(String str, char delim) {
 }
 
 static String string_split_after(String str, char delim) {
-    char *ptr = str.data;
-    char *end = str.data + str.len;
+    const char *ptr = str.data;
+    const char *end = str.data + str.len;
     for (;ptr < end; ptr++) {
-        char c = *ptr;
+        const char c = *ptr;
         if (c == delim) {
             return (String){
                 .data = ptr,
@@ -413,6 +409,13 @@ static String string_split_after(String str, char delim) {
         }
     }
     return (String){0};
+}
+
+static String string_trim_prefix(String str, String prefix) {
+    return (String) {
+        .data = str.data + prefix.len,
+        .len = str.len - prefix.len,
+    };
 }
 
 // Allocates new strings in a string array, duplicated the results of the split
@@ -425,12 +428,12 @@ static StringArray string_split_delim(Allocator *alloc, String str, char delim) 
         err("Out of memory\n");
         return arr;
     }
-    char *ptr = str.data;
-    char *end = str.data + str.len;
-    for (;ptr < end;) {
-        char *first = ptr;
+    const char *ptr = str.data;
+    const char *end = str.data + str.len;
+    for (;ptr < end; ptr++) {
+        const char *first = ptr;
         for (;ptr < end; ptr++) {
-            char c = *ptr;
+            const char c = *ptr;
             if (c == delim)
                 break;
         }
@@ -438,7 +441,6 @@ static StringArray string_split_delim(Allocator *alloc, String str, char delim) 
                                 .data = first,
                                 .len = (int)(ptr - first),
                             });
-        ptr++;
     }
 
     return arr;
@@ -447,7 +449,7 @@ static StringArray string_split_delim(Allocator *alloc, String str, char delim) 
 // Returns a string split after last instance of delim in string. Truncates input string to split point
 static String string_pop_delim(String *str, char delim) {
     String res = {0};
-    char *end = str->data + str->len - 1;
+    const char *end = str->data + str->len - 1;
     while (end != str->data) {
         if (*end == delim) {
             ++end;
@@ -511,7 +513,7 @@ static String string_print_bufv(char *buf, usize size, const char *fmt, va_list 
 }
 
 static String string_printfv(Allocator *alloc, const char *fmt, va_list args) {
-    uint buf_size = string_len(fmt) * 2;
+    uint buf_size = string_len(fmt) * 2; // ISSUE This is not a correct size to use
     char *buf = (char *)alloc->alloc(alloc, buf_size);
     return string_print_bufv(buf, buf_size, fmt, args);
 }
