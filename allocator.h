@@ -172,6 +172,10 @@ void *stack_allocator_alloc(void *ctx, usize size);
     (array)->len = size;\
 } while (0)
 
+#define array_reset(array) ((array)->len = 0)
+
+#define array_first(array) (*(array)->items)
+#define array_first_ptr(array) ((array)->items)
 #define array_last(array) ((array)->items[(array)->len - 1])
 #define array_last_ptr(array) &((array)->items[(array)->len - 1])
 
