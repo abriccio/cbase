@@ -5,37 +5,41 @@
 #include "strings.h"
 #include "types.h"
 
-#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <copyfile.h>
 
-// TODO Change const char * to String where needed, temp allocate a cstring within each function
-
 // Opens a file from a path, with write permissions
 static File file_open(String path, FileOpenFlag flags) {
     STACK_ALLOC_BEGIN(512);
     char *cstr = cstring_from_string(STACK_ALLOC, path);
-    char *mode;
+	int oflag = O_CREAT;
     if (flags & FileOpen_ReadOnly)
-        mode = "r";
+		oflag |= O_RDONLY;
     else
-        mode = "w";
+        oflag |= O_RDWR;
+	if (flags & FileOpen_Append)
+		oflag |= O_APPEND;
 
+	// TODO replace fopen with open
     // TODO handle append write
 
-    FILE *fd = fopen(cstr, mode);
-    if (!fd) {
+    int fd = open(cstr, oflag);
+    if (fd < 0) {
         err("Failed to open %s: %s\n", cstr, strerror(errno));
         return (File){0};
     }
-    usize len = 0;
-    fseek(fd, 0, SEEK_END);
-    len = (usize)ftell(fd);
-    fseek(fd, 0, SEEK_SET);
+    usize len = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
 
     return (File){.path = path, .fd = fd, .size = len};
+}
+
+static bool32 file_is_valid(File f) {
+	return (f.path.data && f.path.len && f.fd >= 0);
 }
 
 static bool32 file_exists(String path) {
@@ -46,16 +50,16 @@ static bool32 file_exists(String path) {
 }
 
 static void file_seek_begin(File f) {
-    fseek(f.fd, 0, SEEK_SET);
+    lseek(f.fd, 0, SEEK_SET);
 }
 
 static void file_seek_end(File f) {
-    fseek(f.fd, 0, SEEK_END);
+    lseek(f.fd, 0, SEEK_END);
 }
 
 static bool32 file_read_full(File f, char *buf) {
-    usize read = fread(buf, 1, f.size, f.fd);
-    return read == f.size;
+    usize bytes_read = read(f.fd, buf, f.size);
+    return bytes_read == f.size;
 }
 
 static char *file_read_full_alloc(File f, Allocator *alloc) {
@@ -68,7 +72,7 @@ static char *file_read_full_alloc(File f, Allocator *alloc) {
 }
 
 static void file_write(File f, void *data, usize size) {
-    fwrite(data, 1, size, f.fd);
+    write(f.fd, data, size);
 }
 
 static void file_write_string(File f, String str) {
@@ -85,7 +89,7 @@ static void file_printf(File f, Allocator *alloc, const char *fmt, ...) {
 }
 
 static void file_close(File f) {
-    fclose(f.fd);
+    close(f.fd);
 }
 
 static bool32 file_copy(String src, String dst) {
@@ -201,7 +205,8 @@ static bool32 _make_dir_internal(String path) {
 
 static bool32 _make_dir_recursive(String path) {
     const char *ptr = path.data;
-    for (int i = 0; i < path.len; ++i) {
+	int i;
+    for (i = 0; i < path.len; ++i) {
         if (ptr[i] == '/' && i != 0) {
             String dir = {.data = ptr, .len = i};
             if (!_make_dir_internal(dir))

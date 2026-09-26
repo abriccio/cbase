@@ -16,11 +16,12 @@ typedef u32 FileOpenFlag;
 enum FileOpenFlags {
     FileOpen_ReadOnly = 1 << 0,
     FileOpen_Binary = 1 << 1,
+	FileOpen_Append = 1 << 2,
 };
 
 typedef struct {
     String path;
-    FILE* fd;
+    int fd;
     usize size;
 } File;
 
@@ -38,6 +39,7 @@ typedef struct DirIterator {
 
 static File file_open(String path, FileOpenFlag flags);
 static void file_close(File f);
+static bool32 file_is_valid(File);
 static bool32 file_exists(String path);
 static void file_seek_begin(File f);
 static void file_seek_end(File f);

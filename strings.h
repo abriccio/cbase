@@ -91,19 +91,20 @@ static Utf16BOM string16_bom(const u16 first_char) {
 static String string_from_utf16(Allocator *alloc, Utf16BOM byte_order, u8 *utf16, size_t utf16_size) {
     String str = {.len = 0};
     char *ptr = (char*)alloc->alloc(alloc, utf16_size / 2 + 1);
+	int i;
     str.data = ptr;
 
     switch (byte_order) {
     case Utf16None:
     case Utf16Le:
-        for (int i = 0; i < utf16_size; i += 2, ptr++, str.len++) {
+        for (i = 0; i < utf16_size; i += 2, ptr++, str.len++) {
             uint16_t c = *(uint16_t*)&utf16[i];
             *ptr = (char)c;
         }
         *ptr = 0;
         break;
     case Utf16Be:
-        for (int i = 0; i < utf16_size; i += 2, ptr++, str.len++) {
+        for (i = 0; i < utf16_size; i += 2, ptr++, str.len++) {
             *ptr = utf16[i]; // just ignore lsb lol
         }
         *ptr = 0;
@@ -118,7 +119,9 @@ static String16 string16_from_string(Allocator *alloc, String str) {
 
     u16 *ptr = str16.data = (u16*)alloc->alloc(alloc, str.len * sizeof(u16));
 
-    for (int i = 0; i < str.len; ++i) {
+	int i;
+
+    for (i = 0; i < str.len; ++i) {
         ptr[i] = (u16)str.data[i];
     }
 
@@ -131,7 +134,9 @@ static String16 string16_from_utf8(Allocator *alloc, const char *str) {
 
     u16 *ptr = str16.data = (u16*)alloc->alloc(alloc, len * sizeof(u16));
 
-    for (int i = 0; i < len; ++i) {
+	int i;
+
+    for (i = 0; i < len; ++i) {
         ptr[i] = (u16)str[i];
     }
 
@@ -141,7 +146,9 @@ static String16 string16_from_utf8(Allocator *alloc, const char *str) {
 static u16 *utf16_from_string(Allocator *alloc, String str) {
     u16 *buf = (u16*)alloc->alloc(alloc, str.len * sizeof(u16) + 1);
 
-    for (int i = 0; i < str.len; ++i) {
+	int i;
+
+    for (i = 0; i < str.len; ++i) {
         buf[i] = (u16)str.data[i];
     }
 
@@ -153,8 +160,9 @@ static u16 *utf16_from_string(Allocator *alloc, String str) {
 static u16 *utf16_from_utf8(Allocator *alloc, const char *str) {
     int len = string_len(str);
     u16 *buf = (u16*)alloc->alloc(alloc, (len + 1) * sizeof(u16));
+	int i;
 
-    for (int i = 0; i < len; ++i) {
+    for (i = 0; i < len; ++i) {
         buf[i] = (u16)str[i];
     }
 
@@ -181,7 +189,8 @@ static char *cstring_from_string(Allocator *alloc, String str) {
 static bool32 string_match(String a, String b) {
     if (a.len != b.len) return FALSE;
     if (a.data == b.data) return TRUE;
-    for (int i = 0; i < a.len; ++i) {
+	int i;
+    for (i = 0; i < a.len; ++i) {
         if (a.data[i] != b.data[i]) {
             return FALSE;
         }
@@ -207,7 +216,8 @@ static bool32 string_match_no_case(String a, String b) {
     int diff = 0;
     // 'a'-'A'=32, 'z'-'Z'=32
     int case_diff = 32;
-    for (int i = 0; i < a.len; ++i) {
+	int i;
+    for (i = 0; i < a.len; ++i) {
         int d = a.data[i] - b.data[i];
         if (d != 0) {
             if (abs(d) != case_diff) {
@@ -225,7 +235,8 @@ static bool32 string_match_no_case(String a, String b) {
 static String string_to_snake_case(Allocator *alloc, String str) {
     // Count num capitals - 1 -> num underscores to add
     int num_capitals = 0;
-    for (int i = 0; i < str.len; ++i) {
+	int i;
+    for (i = 0; i < str.len; ++i) {
         if (str.data[i] >= 'A' && str.data[i] <= 'Z') {
             num_capitals++;
         }
@@ -237,7 +248,7 @@ static String string_to_snake_case(Allocator *alloc, String str) {
     res.data = data;
 
     int j = 0;
-    for (int i = 0; i < str.len; ++i) {
+    for (i = 0; i < str.len; ++i) {
         if (str.data[i] >= 'A' && str.data[i] <= 'Z') {
             if (i > 0) {
                 data[j] = '_';
@@ -264,7 +275,8 @@ static StringArray string_array_from_cstrs(Allocator *alloc, const char *cstrs[]
     sa.strings = buf;
     sa.count = count;
     sa.cap = capacity;
-    for (int i = 0; i < count; ++i) {
+	int i;
+    for (i = 0; i < count; ++i) {
         sa.strings[i] = string(cstrs[i]);
     }
 
@@ -279,7 +291,8 @@ static StringArray string_array_from_array(Allocator *alloc, String strings[], i
         err("String alloc failed\n");
         return sa;
     }
-    for (int i = 0; i < count; ++i) {
+	int i;
+    for (i = 0; i < count; ++i) {
         sa.strings[i] = strings[i];
     }
 
@@ -301,7 +314,8 @@ static void string_array_append(Allocator *alloc, StringArray *sa, String str) {
 // Generate a single string from a StringArray, inserting spaces between each item
 static String string_array_flatten(Allocator *alloc, const StringArray *sa) {
     int sum = 0;
-    for (int i = 0; i < sa->count; ++i) {
+	int i;
+    for (i = 0; i < sa->count; ++i) {
         sum += sa->strings[i].len;
         if (i + 1 < sa->count)
             sum += 1; // add room for a space
@@ -311,7 +325,7 @@ static String string_array_flatten(Allocator *alloc, const StringArray *sa) {
     char *ptr = (char*)alloc->alloc(alloc, sum);
     str.data = ptr;
 
-    for (int i = 0; i < sa->count; ++i) {
+    for (i = 0; i < sa->count; ++i) {
         memcpy(ptr, sa->strings[i].data, sa->strings[i].len);
         ptr += sa->strings[i].len;
         *ptr = ' ';
@@ -323,7 +337,8 @@ static String string_array_flatten(Allocator *alloc, const StringArray *sa) {
 
 static String string_concat(Allocator *alloc, String *strings, int count) {
     int size = 0;
-    for (int i = 0; i < count; ++i) {
+	int i;
+    for (i = 0; i < count; ++i) {
         size += strings[i].len;
     }
 
@@ -337,7 +352,7 @@ static String string_concat(Allocator *alloc, String *strings, int count) {
         .len = size,
     };
 
-    for (int i = 0; i < count; ++i) {
+    for (i = 0; i < count; ++i) {
         String *s = &strings[i];
         memcpy(out_data, s->data, s->len);
         out_data += s->len;
@@ -349,7 +364,8 @@ static String string_concat(Allocator *alloc, String *strings, int count) {
 static String path_join(Allocator *alloc, String *paths, int count) {
     int sep_count = count - 1;
     int size = 0;
-    for (int i = 0; i < count; ++i) {
+	int i;
+    for (i = 0; i < count; ++i) {
         size += paths[i].len;
     }
     String str = {0};
@@ -360,7 +376,7 @@ static String path_join(Allocator *alloc, String *paths, int count) {
         return str;
     }
     str.data = ptr;
-    for (int i = 0; i < count; ++i) {
+    for (i = 0; i < count; ++i) {
         String *path = &paths[i];
         memcpy(ptr, path->data, path->len);
         ptr += path->len;
@@ -375,7 +391,8 @@ static String path_join(Allocator *alloc, String *paths, int count) {
 
 static int string_get_count_of(String str, char c) {
     int count = 0;
-    for (int i = 0; i < str.len; ++i) {
+	int i;
+    for (i = 0; i < str.len; ++i) {
         if (str.data[i] == c)
             count += 1;
     }
@@ -384,7 +401,8 @@ static int string_get_count_of(String str, char c) {
 }
 
 static String string_split_until(String str, char delim) {
-    for (int i = 0; i < str.len; ++i) {
+	int i;
+    for (i = 0; i < str.len; ++i) {
         const char c = str.data[i];
         if (c == delim) {
             return (String){

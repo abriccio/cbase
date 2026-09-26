@@ -58,7 +58,8 @@ void arena_ensure_reserve_size(Arena *a, usize size) {
         // make new arena
         Arena *new = arena_init_opt((ArenaOptions){.reserve_size = next_power_of_two(size_actual)});
         new->prev = cur;
-        for (Arena *n = cur; n != NULL; n = n->prev) {
+		Arena *n;
+        for (n = cur; n != NULL; n = n->prev) {
             n->current = new;
         }
     }
@@ -66,7 +67,8 @@ void arena_ensure_reserve_size(Arena *a, usize size) {
 
 usize arena_query_size(Arena *a) {
     usize sum = 0;
-    for (Arena *node = a->current; node != NULL; node = node->prev) {
+	Arena *node;
+    for (node = a->current; node != NULL; node = node->prev) {
         sum += node->head;
     }
 
@@ -105,11 +107,15 @@ void *arena_realloc(void *ctx, void *ptr, usize size)
     return arena_alloc(ctx, size);
 }
 
-void arena_free(void *ctx, void *ptr) {}
+void arena_free(void *ctx, void *ptr) {
+	(void)ctx;
+	(void)ptr;
+}
 
 // Resets the head to zero, allowing for re-use of arena without reallocating
 void arena_reset(Arena *a) {
-    for (Arena *cur = a->current; cur != NULL; cur = cur->prev) {
+	Arena *cur = a->current;
+    for (; cur != NULL; cur = cur->prev) {
         arena_set_head(cur, ARENA_HEADER_SIZE);
     }
 }
@@ -124,7 +130,8 @@ void arena_set_head(Arena *a, usize head) {
 
 void arena_deinit(Arena *a) {
     if (!a) return;
-    for (Arena *n = a->current, *prev = NULL; n != NULL; n = prev) {
+	Arena *n = a->current, *prev = NULL;
+    for (; n != NULL; n = prev) {
         prev = n->prev;
         _mem_release(n, n->reserve);
     }
