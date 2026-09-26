@@ -9,6 +9,7 @@
 
 #include "types.h"
 #include "log.h"
+#include "util.h"
 
 /* ALLOCATOR INTERFACE */
 
@@ -29,7 +30,7 @@ static bool32 is_power_of_two(usize n) {
 
 static usize next_power_of_two(usize n) {
     if (is_power_of_two(n)) return n;
-    return 1ul << (64 - __builtin_clzll(n));
+    return 1ul << (64 - clz64(n));
 }
 
 static void *align_forward(usize ptr, int align) {
